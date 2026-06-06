@@ -283,6 +283,7 @@ model Community {
   visitorRequests          VisitorRequest[]
   maintenanceTickets       MaintenanceTicket[]
   invoices                 Invoice[]
+  passwordResetOtps        PasswordResetOtp[]
 
   @@index([status])
   @@index([slug])
@@ -363,22 +364,26 @@ model Unit {
 // DOMAIN: USERS (Identity + Profiles)
 // =============================================================================
 
-/// The primary users table.
-/// id is a FK to Supabase auth.users(id). Supabase inserts a row here
-/// via a DB trigger (or Supabase Edge Function) upon auth.users insert.
-/// One user can have exactly ONE role-specific profile (resident, admin, or staff).
 model User {
-  id          String     @id @db.Uuid  // References auth.users(id) in Supabase
-  communityId String     @db.Uuid
-  role        UserRole
-  status      UserStatus @default(PENDING_VERIFICATION)
-  email       String     @db.VarChar(254)
-  phone       String?    @db.VarChar(20)
-  displayName String     @db.VarChar(200)
-  avatarUrl   String?    @db.Text
-  fcmToken    String?    @db.Text    // Firebase Cloud Messaging token for push
-  lastLoginAt DateTime?  @db.Timestamptz
-  metadata    Json       @default("{}")
+  id                  String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId         String     @db.Uuid
+  role                UserRole
+  status              UserStatus @default(PENDING_VERIFICATION)
+  username            String     @unique @db.VarChar(100)
+  email               String     @db.VarChar(254)
+  phone               String     @db.VarChar(20)
+  passwordHash        String     @db.Text
+  refreshTokenHash    String?    @db.Text
+  firstLoginCompleted Boolean    @default(false)
+  mustChangePassword  Boolean    @default(true)
+  passwordChangedAt   DateTime?  @db.Timestamptz
+  failedLoginAttempts Int        @default(0)
+  lockedUntil         DateTime?  @db.Timestamptz
+  displayName         String     @db.VarChar(200)
+  avatarUrl           String?    @db.Text
+  fcmToken            String?    @db.Text    // Firebase Cloud Messaging token for push
+  lastLoginAt         DateTime?  @db.Timestamptz
+  metadata            Json       @default("{}")
 
   createdAt   DateTime  @default(now()) @db.Timestamptz
   updatedAt   DateTime  @updatedAt @db.Timestamptz
@@ -439,6 +444,25 @@ model ResidentProfile {
   @@index([communityId])
   @@index([communityId, isOwner])
   @@map("resident_profiles")
+}
+
+/// Tracks OTPs issued for password recovery
+model PasswordResetOtp {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId String   @db.Uuid
+  phone       String   @db.VarChar(20)
+  otpHash     String   @db.Text
+  expiresAt   DateTime @db.Timestamptz
+  isUsed      Boolean  @default(false)
+
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Restrict)
+
+  @@index([communityId, phone])
+  @@index([expiresAt])
+  @@map("password_reset_otps")
 }
 
 /// Extended profile for community admins and managers.

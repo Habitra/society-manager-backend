@@ -8,29 +8,20 @@
 
 # Current Development Phase
 
-* **Current sprint**: Operations & Guard Interface Implementation
-* **Current milestone**: Visitor Management Modules Complete
-* **Current focus**: Visitor pre-approvals, on-arrival requests, QR gate passes, and entry logging are done. Preparing for Maintenance and Billing.
+* **Current sprint**: Authentication Redesign & Top-Down Onboarding
+* **Current milestone**: Local JWT Auth & First-Login Flow
+* **Current focus**: Removing Supabase Auth dependence and implementing the hierarchical onboarding strategy (Platform Admin -> Community Admin -> Resident) with forced first-login password changes.
 
 # Project Status Dashboard
 
 ## Completed
 
-- [x] PostgreSQL + Supabase setup
-- [x] Prisma integration
-- [x] NestJS backend foundation
-- [x] Authentication architecture
-- [x] Authorization guards
-- [x] Multi-tenant architecture
-- [x] Tenant middleware
-- [x] Audit logging framework
-- [x] Global exception handling
-- [x] Swagger documentation
-- [x] Base repository pattern
-- [x] Prisma service
-- [x] Supabase service
+- [x] Initial Supabase + Prisma setup
+- [x] Tenant Context & Base Repository pattern
+- [x] Audit Logging Framework
+- [x] Global Exception Filter & Swagger docs
 - [x] CommunityModule (Create, Update, Get, List, Soft Delete)
-- [x] TowerModule (Create, Update, Get, List, Soft Delete)
+- [x] TowerModule (Create, Update, List, Soft Delete)
 - [x] UnitModule (Create, Update, Get, List, Search, Soft Delete)
 - [x] ResidentAssignmentModule (Assign, Remove, List by Unit, List by User, Mark Primary)
 - [x] Unit Tests for Property Management Services
@@ -40,10 +31,15 @@
 
 ## In Progress
 
-- [ ] Project documentation (ongoing)
+- [x] Schema update for local Auth (username, password_hash, first_login_completed)
+- [x] Local JWT AuthModule & First-Login enforcement
+- [x] Community Admin bootstrap via Community Creation
+- [x] Password Recovery (OTP-based)
 
 ## Pending
 
+- [ ] Resident Invitation / Credential Generation Module
+- [ ] Bulk Import Module (Excel/CSV for Towers, Units, Residents)
 - [ ] Maintenance Module
 - [ ] Billing Module
 - [ ] Announcement Module
@@ -55,10 +51,16 @@
 
 # System Architecture
 
-* **Backend architecture**: NestJS Modular Monolith following standard controller-service-repository layers.
-* **Authentication architecture**: Supabase JWT-based authentication. Validation is globally enforced via `SupabaseAuthGuard`.
-* **Authorization architecture**: Role-based access control leveraging the `UserRole` enum and enforced globally via `RolesGuard` and `@Roles()` decorator.
-* **Multi-tenant architecture**: Request-scoped `TenantContextService` populated by `TenantMiddleware`. This ensures the active `communityId` is available.
+* **Backend architecture**: Modular Monolith (NestJS), loosely coupled domains.
+* **Authentication architecture**: Custom Local JWT Authentication. Users authenticate using a system-generated `username` and `password`. First login enforces a password change and profile completion (email, phone). Supabase Auth has been deprecated in favor of this model.
+* **Multi-tenancy approach**: Shared database, shared schema.
+  * Every tenant-aware table has a `community_id` column.
+  * A `TenantMiddleware` intercepts requests, extracts the JWT, and injects `communityId` into `TenantContextService`.
+  * All database access is routed through a generic `BaseRepository<T>` that automatically appends `where: { communityId }` to every query, guaranteeing data isolation.
+* **Onboarding Hierarchy**: 
+  * Platform Super Admin creates communities and Community Admins.
+  * Community Admins create Towers, Units, and Residents (generating temporary credentials).
+  * Residents activate accounts on first login.
 * **Database architecture**: Managed via Prisma ORM. `BaseRepository` automatically scopes all CRUD operations by `communityId` to prevent cross-tenant data leakage.
 
 # Folder Structure
@@ -294,7 +296,7 @@ D:\SOCIETY MANAGER\SRC
 # Decisions Log
 
 * **Multi-tenancy Strategy**: Chose a shared database and shared schema model relying on logical isolation (`communityId`). This approach scales better regarding migration management and aggregate analytics compared to schema-per-tenant, effectively securing data using a request-scoped `BaseRepository`.
-* **Authentication Service**: Subcontracted to Supabase Auth to eliminate overhead regarding JWT signing, user profile validation, password hashing, and third-party login providers.
+* **Authentication Service**: Custom Local JWT authentication replacing Supabase Auth. Includes a top-down onboarding hierarchy, account locking, and first-login password enforcement.
 * **Audit Logging**: Handled via asynchronous (fire-and-forget) service execution and global interceptor bindings. This guarantees an immutable audit trail for all modification endpoints (`POST`, `PATCH`, `DELETE`) without blocking fast request response times.
 
 # Next Recommended Task

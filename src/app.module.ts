@@ -24,7 +24,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
-import { SupabaseAuthGuard } from './auth/guards/supabase-auth.guard';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AuditModule } from './audit/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
@@ -104,7 +104,7 @@ import { GateEntryModule } from './gate-entry/gate-entry.module';
     // Use @Public() to opt routes out.
     {
       provide: APP_GUARD,
-      useClass: SupabaseAuthGuard,
+      useClass: JwtAuthGuard,
     },
 
     // ─── Global Roles Guard ───────────────────────────────────────────────

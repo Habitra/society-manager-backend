@@ -17,11 +17,20 @@ export const configuration = () => ({
       .map((o) => o.trim()),
   },
 
+  auth: {
+    jwtSecret: process.env.JWT_SECRET ?? 'super-secret-default',
+    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? 'super-secret-refresh-default',
+    jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '1h',
+    jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+    bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS ?? '10', 10),
+    maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS ?? '5', 10),
+    lockoutDurationMinutes: parseInt(process.env.LOCKOUT_DURATION_MINUTES ?? '15', 10),
+  },
+
   supabase: {
     url: process.env.SUPABASE_URL!,
     anonKey: process.env.SUPABASE_ANON_KEY!,
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    jwtSecret: process.env.SUPABASE_JWT_SECRET!,
   },
 
   database: {
