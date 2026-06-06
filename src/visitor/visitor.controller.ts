@@ -1,0 +1,67 @@
+// src/visitor/visitor.controller.ts
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequestUser } from '../auth/types/jwt-payload.type';
+import { VisitorService } from './visitor.service';
+import { CreateVisitorRequestDto } from './dto/create-visitor-request.dto';
+import { VisitorRequestResponseDto } from './dto/visitor-request-response.dto';
+
+@ApiTags('Visitor Requests')
+@ApiBearerAuth()
+@Controller('visitors')
+export class VisitorController {
+  constructor(private readonly visitorService: VisitorService) {}
+
+  @Post()
+  @Roles(UserRole.RESIDENT, UserRole.GUARD, UserRole.MANAGER)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a visitor request (Pre-approved or On-Arrival)' })
+  @ApiCreatedResponse({ type: VisitorRequestResponseDto })
+  async createRequest(
+    @Body() dto: CreateVisitorRequestDto,
+    @CurrentUser() user: RequestUser,
+  ): Promise<VisitorRequestResponseDto> {
+    return this.visitorService.createRequest(dto, user.id);
+  }
+
+  @Get('my')
+  @Roles(UserRole.RESIDENT)
+  @ApiOperation({ summary: 'List visitor history for the current resident' })
+  @ApiOkResponse({ type: [VisitorRequestResponseDto] })
+  async getMyRequests(@CurrentUser() user: RequestUser): Promise<VisitorRequestResponseDto[]> {
+    return this.visitorService.listResidentRequests(user.id);
+  }
+
+  @Get(':id')
+  @Roles(UserRole.RESIDENT, UserRole.GUARD, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get visitor request details' })
+  @ApiOkResponse({ type: VisitorRequestResponseDto })
+  async getRequest(@Param('id', ParseUUIDPipe) id: string): Promise<VisitorRequestResponseDto> {
+    return this.visitorService.getRequestById(id);
+  }
+
+  @Patch(':id/approve')
+  @Roles(UserRole.RESIDENT, UserRole.GUARD)
+  @ApiOperation({ summary: 'Approve an ON_ARRIVAL visitor request' })
+  @ApiOkResponse({ type: VisitorRequestResponseDto })
+  async approveRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<VisitorRequestResponseDto> {
+    return this.visitorService.approveOnArrival(id, user.id);
+  }
+
+  @Patch(':id/reject')
+  @Roles(UserRole.RESIDENT, UserRole.GUARD)
+  @ApiOperation({ summary: 'Reject an ON_ARRIVAL visitor request' })
+  @ApiOkResponse({ type: VisitorRequestResponseDto })
+  async rejectRequest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<VisitorRequestResponseDto> {
+    return this.visitorService.rejectOnArrival(id, user.id);
+  }
+}
