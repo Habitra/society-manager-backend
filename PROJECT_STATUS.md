@@ -28,6 +28,7 @@
 - [x] VisitorModule (Pre-approved / On-arrival flows)
 - [x] GatePassModule (QR Token generation & validation)
 - [x] GateEntryModule (Entry & exit tracking)
+- [x] Platform Super Admin Module (Cross-tenant access, Global stats, Community Admin creation)
 
 ## In Progress
 
@@ -256,6 +257,27 @@ D:\SOCIETY MANAGER\SRC
   * `PATCH /gate-entries/:id/exit`
 * **Dependencies**: PrismaModule, TenantModule, GatePassModule, VisitorModule
 
+## SuperAdminModule
+* **Status**: Completed
+* **Features**:
+  * Cross-tenant access bypassing standard TenantContext isolation.
+  * Global dashboard statistics (communities, towers, units, residents, admins).
+  * Community administration (activate, suspend).
+  * Community Admin creation with transactional username/password generation.
+  * Community Admin password resets.
+* **Endpoints**:
+  * `GET /super-admin/dashboard`
+  * `GET /super-admin/communities`
+  * `GET /super-admin/communities/:id`
+  * `GET /super-admin/communities/:id/stats`
+  * `PATCH /super-admin/communities/:id/activate`
+  * `PATCH /super-admin/communities/:id/deactivate`
+  * `POST /super-admin/community-admins`
+  * `GET /super-admin/community-admins`
+  * `GET /super-admin/community-admins/:id`
+  * `POST /super-admin/community-admins/:id/reset-password`
+* **Dependencies**: PrismaModule, AuditModule
+
 # API Documentation Index
 
 **Communities**
@@ -287,6 +309,16 @@ D:\SOCIETY MANAGER\SRC
 - `GET /resident-assignments/user/:userId` - List units for a resident
 - `PATCH /resident-assignments/:id/primary` - Set primary resident
 - `DELETE /resident-assignments/:id` - Remove assignment
+
+**Super Admin**
+- `GET /super-admin/dashboard` - Get global statistics
+- `GET /super-admin/communities` - List all communities globally
+- `GET /super-admin/communities/:id` - Get specific community details
+- `PATCH /super-admin/communities/:id/activate` - Activate a community
+- `PATCH /super-admin/communities/:id/deactivate` - Deactivate a community
+- `POST /super-admin/community-admins` - Create a Community Admin
+- `GET /super-admin/community-admins` - List all Community Admins
+- `POST /super-admin/community-admins/:id/reset-password` - Reset Community Admin password
 
 # Development Timeline
 

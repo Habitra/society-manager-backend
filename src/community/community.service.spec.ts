@@ -49,6 +49,7 @@ describe('CommunityService', () => {
 
       const result = await service.createCommunity({
         name: 'Test',
+        code: 'TST',
         slug: 'test',
         type: CommunityType.APARTMENT_COMPLEX,
         address: {} as any,
@@ -68,6 +69,7 @@ describe('CommunityService', () => {
 
       await expect(service.createCommunity({
         name: 'Test',
+        code: 'TST',
         slug: 'test',
         type: CommunityType.APARTMENT_COMPLEX,
         address: {} as any,

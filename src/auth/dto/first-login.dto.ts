@@ -19,7 +19,7 @@ export class FirstLoginDto {
   newPassword!: string;
 
   @ApiProperty({ example: '+919876543210' })
-  @IsPhoneNumber()
+  @IsPhoneNumber('IN')
   @IsNotEmpty()
   phone!: string;
 

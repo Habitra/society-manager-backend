@@ -252,6 +252,7 @@ model Community {
   id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String          @db.VarChar(200)
   slug        String          @unique @db.VarChar(100) // URL-safe short name e.g. "greenpark-phase2"
+  code        String          @unique @db.VarChar(10)  // Permanent 3-letter code, e.g. "JPA"
   type        CommunityType
   status      CommunityStatus @default(PENDING)
   logoUrl     String?         @db.Text
@@ -284,11 +285,33 @@ model Community {
   maintenanceTickets       MaintenanceTicket[]
   invoices                 Invoice[]
   passwordResetOtps        PasswordResetOtp[]
+  usernameSequences        UsernameSequence[]
 
   @@index([status])
   @@index([slug])
   @@index([deletedAt])
   @@map("communities")
+}
+
+// =============================================================================
+// DOMAIN: SYSTEM (Platform Sequences)
+// =============================================================================
+
+/// Tracks next values for generated sequences (like usernames) safely.
+model UsernameSequence {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId String   @db.Uuid
+  userType    String   @db.VarChar(50) // e.g. "COMMUNITY_ADMIN", "RESIDENT"
+  nextValue   Int      @default(1)
+
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Restrict)
+
+  @@unique([communityId, userType])
+  @@index([communityId])
+  @@map("username_sequences")
 }
 
 // =============================================================================

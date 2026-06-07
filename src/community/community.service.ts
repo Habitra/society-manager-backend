@@ -56,6 +56,7 @@ export class CommunityService {
 
     const community = await this.communityRepository.createCommunity({
       name: dto.name,
+      code: dto.code,
       slug,
       type: dto.type,
       address: dto.address as unknown as object,

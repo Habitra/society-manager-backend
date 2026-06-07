@@ -72,6 +72,12 @@ export class CreateCommunityDto {
   @MaxLength(200)
   name!: string;
 
+  @ApiProperty({ description: 'Permanent community code', example: 'JPA' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  code!: string;
+
   @ApiProperty({
     description: 'URL-safe slug (auto-generated if not provided)',
     example: 'greenpark-phase2',

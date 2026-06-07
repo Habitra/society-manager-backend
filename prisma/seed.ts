@@ -14,8 +14,9 @@ async function main() {
     where: { slug: 'platform-admin' },
     update: {},
     create: {
-      name: 'Platform Admin',
-      slug: 'platform-admin',
+      name: 'Platform',
+      code: 'SYS',
+      slug: 'platform',
       type: 'COMMERCIAL',
       status: 'ACTIVE',
       address: {
