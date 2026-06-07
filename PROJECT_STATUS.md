@@ -29,6 +29,7 @@
 - [x] GatePassModule (QR Token generation & validation)
 - [x] GateEntryModule (Entry & exit tracking)
 - [x] Platform Super Admin Module (Cross-tenant access, Global stats, Community Admin creation)
+- [x] ResidentModule (Resident creation, temporary credentials, profile, assignment, lists, activation)
 
 ## In Progress
 
@@ -39,7 +40,6 @@
 
 ## Pending
 
-- [ ] Resident Invitation / Credential Generation Module
 - [ ] Bulk Import Module (Excel/CSV for Towers, Units, Residents)
 - [ ] Maintenance Module
 - [ ] Billing Module
@@ -278,6 +278,26 @@ D:\SOCIETY MANAGER\SRC
   * `POST /super-admin/community-admins/:id/reset-password`
 * **Dependencies**: PrismaModule, AuditModule
 
+## ResidentModule
+* **Status**: Completed
+* **Features**:
+  * Create resident (creates user, profile, and unit assignment in a transaction).
+  * Generate sequential usernames (`<COMMUNITY_CODE>-XXXXXX`) and temporary passwords.
+  * List and search residents, get resident details.
+  * Activate and deactivate residents.
+  * Reset resident passwords (issues new temporary passwords).
+  * Query unit assignments for residents.
+* **Endpoints**:
+  * `POST /residents`
+  * `GET /residents`
+  * `GET /residents/:id`
+  * `PATCH /residents/:id/activate`
+  * `PATCH /residents/:id/deactivate`
+  * `POST /residents/:id/reset-password`
+  * `GET /residents/:id/units`
+  * `GET /residents/:id/current-unit`
+* **Dependencies**: PrismaModule, TenantModule, AuditModule
+
 # API Documentation Index
 
 **Communities**
@@ -317,8 +337,18 @@ D:\SOCIETY MANAGER\SRC
 - `PATCH /super-admin/communities/:id/activate` - Activate a community
 - `PATCH /super-admin/communities/:id/deactivate` - Deactivate a community
 - `POST /super-admin/community-admins` - Create a Community Admin
-- `GET /super-admin/community-admins` - List all Community Admins
-- `POST /super-admin/community-admins/:id/reset-password` - Reset Community Admin password
+- [x] List all Community Admins
+- [POST /super-admin/community-admins/:id/reset-password] - Reset Community Admin password
+
+**Residents**
+- `POST /residents` - Create a new resident
+- `GET /residents` - List and search residents
+- `GET /residents/:id` - Get resident details
+- `PATCH /residents/:id/activate` - Activate resident
+- `PATCH /residents/:id/deactivate` - Deactivate resident
+- `POST /residents/:id/reset-password` - Reset resident password
+- `GET /residents/:id/units` - Get assigned units
+- `GET /residents/:id/current-unit` - Get primary assigned unit
 
 # Development Timeline
 

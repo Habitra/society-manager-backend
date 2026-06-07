@@ -4,7 +4,7 @@
 // ============================================================
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UnitOccupancyType } from '@prisma/client';
+import { OccupancyType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDate, IsEnum, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 
@@ -19,9 +19,9 @@ export class AssignResidentDto {
   @IsNotEmpty()
   unitId!: string;
 
-  @ApiProperty({ enum: UnitOccupancyType, description: 'Occupancy type (OWNER/TENANT/VACANT)' })
-  @IsEnum(UnitOccupancyType)
-  occupancy!: UnitOccupancyType;
+  @ApiProperty({ enum: OccupancyType, description: 'Occupancy type (OWNER_RESIDENT/OWNER_NON_RESIDENT/TENANT)' })
+  @IsEnum(OccupancyType)
+  occupancyType!: OccupancyType;
 
   @ApiPropertyOptional({ description: 'Is this the primary resident for the unit?', default: false })
   @IsOptional()

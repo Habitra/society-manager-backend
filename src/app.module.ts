@@ -45,6 +45,8 @@ import { VisitorModule } from './visitor/visitor.module';
 import { GatePassModule } from './gate-pass/gate-pass.module';
 import { GateEntryModule } from './gate-entry/gate-entry.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
+import { ResidentModule } from './resident/resident.module';
+import { ImportsModule } from './imports/imports.module';
 
 @Module({
   imports: [
@@ -87,6 +89,8 @@ import { SuperAdminModule } from './super-admin/super-admin.module';
     GatePassModule,
     GateEntryModule,
     SuperAdminModule,
+    ResidentModule,
+    ImportsModule,
     // UserModule,
     // MaintenanceModule,
     // BillingModule,

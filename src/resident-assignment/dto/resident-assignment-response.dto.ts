@@ -4,7 +4,7 @@
 // ============================================================
 
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UnitOccupancyType } from '@prisma/client';
+import { OccupancyType } from '@prisma/client';
 import { UnitResponseDto } from '../../unit/dto/unit-response.dto';
 
 export class MinimalUserDto {
@@ -19,7 +19,7 @@ export class ResidentAssignmentResponseDto {
   @ApiProperty() communityId!: string;
   @ApiProperty() userId!: string;
   @ApiProperty() unitId!: string;
-  @ApiProperty({ enum: UnitOccupancyType }) occupancy!: UnitOccupancyType;
+  @ApiProperty({ enum: OccupancyType }) occupancyType!: OccupancyType;
   @ApiProperty() isPrimary!: boolean;
   @ApiPropertyOptional() moveInDate?: Date | null;
   @ApiPropertyOptional() moveOutDate?: Date | null;

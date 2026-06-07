@@ -63,7 +63,7 @@ export class ResidentAssignmentService {
     const assignment = await this.assignmentRepository.create({
       userId: dto.userId,
       unitId: dto.unitId,
-      occupancy: dto.occupancy,
+      occupancyType: dto.occupancyType,
       isPrimary: dto.isPrimary ?? false,
       moveInDate: dto.moveInDate,
       leaseEndDate: dto.leaseEndDate,

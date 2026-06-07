@@ -68,6 +68,13 @@ enum UnitOccupancyType {
   VACANT
 }
 
+/// Occupancy type for a resident in a unit
+enum OccupancyType {
+  OWNER_RESIDENT
+  OWNER_NON_RESIDENT
+  TENANT
+}
+
 /// Flat / plot / villa type
 enum UnitType {
   APARTMENT
@@ -241,6 +248,24 @@ enum AuditAction {
   PERMISSION_CHANGE
 }
 
+/// Bulk Import Type
+enum ImportType {
+  RESIDENT
+  UNIT
+  TOWER
+  STAFF
+  VEHICLE
+}
+
+/// Bulk Import Lifecycle Status
+enum ImportStatus {
+  PENDING
+  VALIDATING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 // =============================================================================
 // DOMAIN: COMMUNITY (Tenant Root)
 // =============================================================================
@@ -286,6 +311,7 @@ model Community {
   invoices                 Invoice[]
   passwordResetOtps        PasswordResetOtp[]
   usernameSequences        UsernameSequence[]
+  importJobs               ImportJob[]
 
   @@index([status])
   @@index([slug])
@@ -432,6 +458,7 @@ model User {
   consentLogs             ConsentLog[]
   auditLogs               AuditLog[]
   vehicles                Vehicle[]
+  importJobsCreated       ImportJob[]        @relation("ImportCreatedBy")
 
   // Email must be unique per community (a user can exist in multiple communities
   // but as separate rows, since community contexts are isolated)
@@ -450,7 +477,6 @@ model ResidentProfile {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String   @unique @db.Uuid
   communityId   String   @db.Uuid  // Denormalized for efficient tenant filtering
-  isOwner       Boolean  @default(true)
   occupation    String?  @db.VarChar(200)
   dateOfBirth   DateTime? @db.Date
   emergencyContact Json? // { name, phone, relation }
@@ -465,7 +491,6 @@ model ResidentProfile {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([communityId])
-  @@index([communityId, isOwner])
   @@map("resident_profiles")
 }
 
@@ -554,9 +579,9 @@ model ResidentUnitAssignment {
   id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   communityId String            @db.Uuid
   userId      String            @db.Uuid
-  unitId      String            @db.Uuid
-  occupancy   UnitOccupancyType
-  isPrimary   Boolean           @default(false) // Primary resident for billing/comms
+  unitId        String            @db.Uuid
+  occupancyType OccupancyType
+  isPrimary     Boolean           @default(false) // Primary resident for billing/comms
   moveInDate  DateTime?         @db.Date
   moveOutDate DateTime?         @db.Date
   leaseEndDate DateTime?        @db.Date
@@ -1116,4 +1141,35 @@ model AuditLog {
   @@index([communityId, action])
   @@index([communityId, createdAt])
   @@map("audit_logs")
+}
+// =============================================================================
+// DOMAIN: SYSTEM (Imports & Jobs)
+// =============================================================================
+
+/// Tracks bulk import jobs
+model ImportJob {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId      String       @db.Uuid
+  type             ImportType
+  status           ImportStatus @default(PENDING)
+  originalFileName String       @db.VarChar(500)
+  totalRows        Int          @default(0)
+  successRows      Int          @default(0)
+  failedRows       Int          @default(0)
+  errorFilePath    String?      @db.Text
+  resultFilePath   String?      @db.Text
+  
+  startedAt        DateTime?    @db.Timestamptz
+  completedAt      DateTime?    @db.Timestamptz
+  
+  createdById      String       @db.Uuid
+  createdAt        DateTime     @default(now()) @db.Timestamptz
+
+  community        Community    @relation(fields: [communityId], references: [id], onDelete: Restrict)
+  createdBy        User         @relation("ImportCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([communityId])
+  @@index([communityId, status])
+  @@index([communityId, type])
+  @@map("import_jobs")
 }

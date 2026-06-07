@@ -6,7 +6,7 @@ import { UnitRepository } from '../unit/unit.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { AuditAction, UnitOccupancyType } from '@prisma/client';
+import { AuditAction, OccupancyType } from '@prisma/client';
 
 describe('ResidentAssignmentService', () => {
   let service: ResidentAssignmentService;
@@ -74,7 +74,7 @@ describe('ResidentAssignmentService', () => {
       const result = await service.assignResident({
         userId: 'user1',
         unitId: 'unit1',
-        occupancy: UnitOccupancyType.TENANT,
+        occupancyType: OccupancyType.TENANT,
         isPrimary: false,
       }, 'admin1');
 
@@ -88,7 +88,7 @@ describe('ResidentAssignmentService', () => {
       await expect(service.assignResident({
         userId: 'user1',
         unitId: 'unit1',
-        occupancy: UnitOccupancyType.TENANT,
+        occupancyType: OccupancyType.TENANT,
       }, 'admin1')).rejects.toThrow(NotFoundException);
     });
   });
