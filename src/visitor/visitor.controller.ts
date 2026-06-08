@@ -1,5 +1,5 @@
 // src/visitor/visitor.controller.ts
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -8,6 +8,9 @@ import { RequestUser } from '../auth/types/jwt-payload.type';
 import { VisitorService } from './visitor.service';
 import { CreateVisitorRequestDto } from './dto/create-visitor-request.dto';
 import { VisitorRequestResponseDto } from './dto/visitor-request-response.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { ListVisitorsDto } from './dto/list-visitors.dto';
+import { ApiPaginatedResponse } from '../common/decorators/api-paginated-response.decorator';
 
 @ApiTags('Visitor Requests')
 @ApiBearerAuth()
@@ -27,12 +30,23 @@ export class VisitorController {
     return this.visitorService.createRequest(dto, user.id);
   }
 
+  @Get()
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'List all visitor requests globally' })
+  @ApiPaginatedResponse(VisitorRequestResponseDto)
+  async getAllVisitors(@Query() dto: ListVisitorsDto) {
+    return this.visitorService.listAllVisitors(dto);
+  }
+
   @Get('my')
   @Roles(UserRole.RESIDENT)
   @ApiOperation({ summary: 'List visitor history for the current resident' })
-  @ApiOkResponse({ type: [VisitorRequestResponseDto] })
-  async getMyRequests(@CurrentUser() user: RequestUser): Promise<VisitorRequestResponseDto[]> {
-    return this.visitorService.listResidentRequests(user.id);
+  @ApiPaginatedResponse(VisitorRequestResponseDto)
+  async getMyRequests(
+    @CurrentUser() user: RequestUser,
+    @Query() dto: PaginationDto,
+  ) {
+    return this.visitorService.listResidentRequests(user.id, dto);
   }
 
   @Get(':id')

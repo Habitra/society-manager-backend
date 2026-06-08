@@ -120,4 +120,82 @@ describe('ResidentService', () => {
       expect(auditService.write).toHaveBeenCalled();
     });
   });
+
+  describe('updateResident', () => {
+    it('should update resident details', async () => {
+      residentRepository.findResidentById.mockResolvedValue({ id: 'u1', email: 'old@example.com', displayName: 'Old Name', residentProfile: {}, residentAssignments: [] } as any);
+      residentRepository.emailExists.mockResolvedValue(false);
+      residentRepository.update.mockResolvedValue({} as any);
+
+      await service.updateResident('u1', { email: 'new@example.com', firstName: 'New', lastName: 'Name' }, 'admin');
+
+      expect(residentRepository.update).toHaveBeenCalledWith('u1', expect.objectContaining({
+        email: 'new@example.com',
+        displayName: 'New Name'
+      }));
+      expect(auditService.write).toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException if new email exists', async () => {
+      residentRepository.findResidentById.mockResolvedValue({ id: 'u1', email: 'old@example.com' } as any);
+      residentRepository.emailExists.mockResolvedValue(true);
+
+      await expect(service.updateResident('u1', { email: 'exist@example.com' }, 'admin')).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('addFamilyMember', () => {
+    it('should add family member and return credentials', async () => {
+      residentRepository.findResidentById.mockResolvedValue({ id: 'u1' } as any);
+      residentRepository.emailExists.mockResolvedValue(false);
+      residentRepository.phoneExists.mockResolvedValue(false);
+      (prismaService.unit.findFirst as jest.Mock).mockResolvedValue({ id: 'unit-1' });
+
+      (prismaService.$transaction as jest.Mock).mockImplementation(async (cb) => {
+        if (typeof cb === 'function') {
+          return cb({
+            community: { findUniqueOrThrow: jest.fn().mockResolvedValue({ code: 'TEST' }) },
+            usernameSequence: { upsert: jest.fn().mockResolvedValue({ nextValue: 2 }) },
+            user: { create: jest.fn().mockResolvedValue({
+              id: 'fam-1', username: 'TEST-FAM-000001', email: 'fam@example.com',
+              residentProfile: { id: 'prof-2' },
+              residentAssignments: [{ unitId: 'unit-1', occupancyType: OccupancyType.OWNER_RESIDENT, isPrimary: false, unit: {} }]
+            }) },
+          });
+        }
+      });
+
+      const result = await service.addFamilyMember('u1', { firstName: 'Fam', lastName: 'Member', phone: '0987654321', unitId: 'unit-1' }, 'admin');
+      
+      expect(result.credentials.username).toBe('TEST-FAM-000001');
+      expect(auditService.write).toHaveBeenCalled();
+    });
+  });
+
+  describe('reassignUnit', () => {
+    it('should reassign unit correctly', async () => {
+      residentRepository.findResidentById.mockResolvedValue({ 
+        id: 'u1', 
+        residentProfile: {}, 
+        residentAssignments: [{ occupancyType: OccupancyType.OWNER_RESIDENT, unit: { unitNumber: '101' } }] 
+      } as any);
+      (prismaService.unit.findFirst as jest.Mock).mockResolvedValue({ id: 'unit-2' });
+
+      (prismaService.$transaction as jest.Mock).mockImplementation(async (cb) => {
+        if (typeof cb === 'function') {
+          return cb({
+            residentUnitAssignment: {
+              updateMany: jest.fn(),
+              create: jest.fn(),
+            }
+          });
+        }
+      });
+
+      await service.reassignUnit('u1', { unitId: 'unit-2' }, 'admin');
+
+      expect(prismaService.$transaction).toHaveBeenCalled();
+      expect(auditService.write).toHaveBeenCalled();
+    });
+  });
 });

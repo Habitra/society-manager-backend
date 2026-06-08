@@ -47,6 +47,18 @@ import { GateEntryModule } from './gate-entry/gate-entry.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
 import { ResidentModule } from './resident/resident.module';
 import { ImportsModule } from './imports/imports.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { BillingModule } from './billing/billing.module';
+import { StaffModule } from './staff/staff.module';
+import { LookupModule } from './lookup/lookup.module';
+import { StorageModule } from './storage/storage.module';
+import { SettingsModule } from './settings/settings.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { AnnouncementModule } from './announcement/announcement.module';
+import { AmenityModule } from './amenity/amenity.module';
+import { FinancialControlCenterModule } from './financial-control-center/financial-control-center.module';
+import { join } from 'path';
 
 @Module({
   imports: [
@@ -59,6 +71,11 @@ import { ImportsModule } from './imports/imports.module';
         allowUnknown: true,
         abortEarly: false,
       },
+    }),
+
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
     }),
 
     // ─── Rate Limiting ────────────────────────────────────────────────────
@@ -92,9 +109,16 @@ import { ImportsModule } from './imports/imports.module';
     ResidentModule,
     ImportsModule,
     // UserModule,
-    // MaintenanceModule,
-    // BillingModule,
-    // AnnouncementModule,
+    MaintenanceModule,
+    DashboardModule,
+    BillingModule,
+    StaffModule,
+    LookupModule,
+    StorageModule,
+    SettingsModule,
+    AnnouncementModule,
+    AmenityModule,
+    FinancialControlCenterModule,
   ],
 
   controllers: [AppController],

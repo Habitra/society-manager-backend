@@ -5,6 +5,8 @@ import { AuditService } from '../audit/audit.service';
 import { ResidentRepository, ResidentWithRelations } from './resident.repository';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { AddFamilyMemberDto } from './dto/add-family-member.dto';
+import { ReassignUnitDto } from './dto/reassign-unit.dto';
 import { ListResidentsDto } from './dto/list-residents.dto';
 import { ResidentCredentialsResponseDto, ResidentResponseDto } from './dto/resident-response.dto';
 import { AuditAction, OccupancyType, Prisma, UserRole, UserStatus } from '@prisma/client';
@@ -230,6 +232,180 @@ export class ResidentService {
       throw new NotFoundException(`Resident '${id}' not found.`);
     }
     return this.mapResidentToDto(user);
+  }
+
+  async updateResident(id: string, dto: UpdateResidentDto, actorId: string): Promise<ResidentResponseDto> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    if (dto.email && dto.email !== user.email) {
+      if (await this.residentRepository.emailExists(dto.email)) {
+        throw new ConflictException(`Email '${dto.email}' is already in use.`);
+      }
+    }
+
+    if (dto.phone && dto.phone !== user.phone) {
+      if (await this.residentRepository.phoneExists(dto.phone)) {
+        throw new ConflictException(`Phone number '${dto.phone}' is already in use.`);
+      }
+    }
+
+    let displayName = user.displayName;
+    if (dto.firstName || dto.lastName) {
+      // Very naive split for simplicity; typically you'd want actual firstName/lastName fields
+      const parts = user.displayName.split(' ');
+      const currentFirst = parts[0] || '';
+      const currentLast = parts.slice(1).join(' ') || '';
+      displayName = `${dto.firstName ?? currentFirst} ${dto.lastName ?? currentLast}`.trim();
+    }
+
+    const updated = await this.residentRepository.update(id, {
+      ...(dto.email ? { email: dto.email } : {}),
+      ...(dto.phone ? { phone: dto.phone } : {}),
+      ...(dto.firstName || dto.lastName ? { displayName } : {}),
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'users',
+      recordId: id,
+      newValues: { email: dto.email, phone: dto.phone, displayName },
+    });
+
+    return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
+  }
+
+  async addFamilyMember(id: string, dto: AddFamilyMemberDto, actorId: string): Promise<ResidentCredentialsResponseDto> {
+    const primaryResident = await this.residentRepository.findResidentById(id);
+    if (!primaryResident) throw new NotFoundException(`Primary Resident '${id}' not found.`);
+
+    if (dto.email && await this.residentRepository.emailExists(dto.email)) {
+      throw new ConflictException(`Email '${dto.email}' is already in use.`);
+    }
+
+    if (await this.residentRepository.phoneExists(dto.phone)) {
+      throw new ConflictException(`Phone number '${dto.phone}' is already in use.`);
+    }
+
+    const unit = await this.prisma.unit.findFirst({
+      where: { id: dto.unitId, communityId: this.tenantContext.communityId, deletedAt: null },
+    });
+
+    if (!unit) {
+      throw new NotFoundException(`Unit '${dto.unitId}' not found.`);
+    }
+
+    const tempPassword = this.generateTemporaryPassword();
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
+    const displayName = `${dto.firstName} ${dto.lastName}`.trim();
+
+    const createdFamilyMember = await this.prisma.$transaction(async (tx) => {
+      const community = await tx.community.findUniqueOrThrow({ where: { id: this.tenantContext.communityId } });
+      const seq = await tx.usernameSequence.upsert({
+        where: { communityId_userType: { communityId: this.tenantContext.communityId, userType: 'FAMILY_MEMBER' } },
+        update: { nextValue: { increment: 1 } },
+        create: { communityId: this.tenantContext.communityId, userType: 'FAMILY_MEMBER', nextValue: 2 },
+      });
+
+      const sequenceString = (seq.nextValue - 1).toString().padStart(6, '0');
+      const username = `${community.code}-FAM-${sequenceString}`;
+
+      const user = await tx.user.create({
+        data: {
+          communityId: this.tenantContext.communityId,
+          role: UserRole.FAMILY_MEMBER,
+          status: UserStatus.ACTIVE,
+          username,
+          email: dto.email || `${username}@placeholder.com`, // Email is unique and required in schema
+          phone: dto.phone,
+          passwordHash,
+          displayName,
+          firstLoginCompleted: false,
+          mustChangePassword: true,
+          residentProfile: {
+            create: {
+              communityId: this.tenantContext.communityId,
+            },
+          },
+          residentAssignments: {
+            create: {
+              communityId: this.tenantContext.communityId,
+              unitId: dto.unitId,
+              occupancyType: OccupancyType.OWNER_RESIDENT, // Defaulting to owner resident for family, could be tenant
+              isPrimary: false,
+            },
+          },
+        },
+        include: {
+          residentProfile: true,
+          residentAssignments: {
+            include: { unit: { include: { tower: true } } },
+          },
+        },
+      });
+
+      return user;
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.CREATE,
+      tableName: 'users',
+      recordId: createdFamilyMember.id,
+      newValues: { username: createdFamilyMember.username, email: createdFamilyMember.email, role: 'FAMILY_MEMBER' },
+    });
+
+    return {
+      resident: this.mapResidentToDto(createdFamilyMember as ResidentWithRelations),
+      credentials: {
+        username: createdFamilyMember.username,
+        temporaryPassword: tempPassword,
+      },
+    };
+  }
+
+  async reassignUnit(id: string, dto: ReassignUnitDto, actorId: string): Promise<ResidentResponseDto> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    const newUnit = await this.prisma.unit.findFirst({
+      where: { id: dto.unitId, communityId: this.tenantContext.communityId, deletedAt: null },
+    });
+
+    if (!newUnit) throw new NotFoundException(`Unit '${dto.unitId}' not found.`);
+
+    // Deactivate previous assignment(s) and create a new one
+    await this.prisma.$transaction(async (tx) => {
+      // Soft delete current active assignments
+      await tx.residentUnitAssignment.updateMany({
+        where: { userId: id, communityId: this.tenantContext.communityId, deletedAt: null },
+        data: { deletedAt: new Date(), moveOutDate: new Date() },
+      });
+
+      // Create new assignment
+      await tx.residentUnitAssignment.create({
+        data: {
+          communityId: this.tenantContext.communityId,
+          userId: id,
+          unitId: dto.unitId,
+          occupancyType: user.residentAssignments[0]?.occupancyType || OccupancyType.OWNER_RESIDENT,
+          isPrimary: true, // Assuming reassignment makes them primary
+          moveInDate: new Date(),
+        },
+      });
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'resident_unit_assignments',
+      recordId: id,
+      newValues: { newUnitId: dto.unitId },
+    });
+
+    return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
   }
 
   async activateResident(id: string, actorId: string): Promise<ResidentResponseDto> {

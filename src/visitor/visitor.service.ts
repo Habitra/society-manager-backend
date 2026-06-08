@@ -6,6 +6,9 @@ import { VisitorRepository } from './visitor.repository';
 import { GatePassService } from '../gate-pass/gate-pass.service';
 import { CreateVisitorRequestDto } from './dto/create-visitor-request.dto';
 import { VisitorRequestResponseDto } from './dto/visitor-request-response.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { toPaginatedResult, toPrismaPage } from '../common/utils/pagination.util';
+import { ListVisitorsDto } from './dto/list-visitors.dto';
 
 @Injectable()
 export class VisitorService {
@@ -63,14 +66,55 @@ export class VisitorService {
     return request as unknown as VisitorRequestResponseDto;
   }
 
-  async listResidentRequests(userId: string): Promise<VisitorRequestResponseDto[]> {
-    // List all requests created by this resident or targeted at their unit
-    const requests = await this.visitorRepository.findMany({
-      where: { requestedById: userId },
-      orderBy: { createdAt: 'desc' },
-      include: { gatePass: true },
-    });
-    return requests as unknown as VisitorRequestResponseDto[];
+  async listAllVisitors(dto: ListVisitorsDto) {
+    const { skip, take } = toPrismaPage(dto);
+    const where: any = {};
+
+    if (dto.search) {
+      where.OR = [
+        { visitorName: { contains: dto.search, mode: 'insensitive' } },
+        { visitorPhone: { contains: dto.search, mode: 'insensitive' } },
+      ];
+    }
+    if (dto.status) where.status = dto.status;
+    if (dto.entryMode) where.entryMode = dto.entryMode;
+    if (dto.startDate || dto.endDate) {
+      where.createdAt = {};
+      if (dto.startDate) where.createdAt.gte = new Date(dto.startDate);
+      if (dto.endDate) where.createdAt.lte = new Date(dto.endDate);
+    }
+
+    const [requests, total] = await Promise.all([
+      this.visitorRepository.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: { gatePass: true },
+      }),
+      this.visitorRepository.count({ where })
+    ]);
+
+    return toPaginatedResult(requests as unknown as VisitorRequestResponseDto[], total, dto);
+  }
+
+  async listResidentRequests(userId: string, dto: PaginationDto) {
+    const { skip, take } = toPrismaPage(dto);
+
+    const [requests, total] = await Promise.all([
+      this.visitorRepository.findMany({
+        where: { requestedById: userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: { gatePass: true },
+      }),
+      this.visitorRepository.count({
+        where: { requestedById: userId },
+      })
+    ]);
+
+    return toPaginatedResult(requests as unknown as VisitorRequestResponseDto[], total, dto);
   }
 
   async approveOnArrival(id: string, actorId: string): Promise<VisitorRequestResponseDto> {

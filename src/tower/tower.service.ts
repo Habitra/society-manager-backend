@@ -15,6 +15,8 @@ import { CreateTowerDto } from './dto/create-tower.dto';
 import { UpdateTowerDto } from './dto/update-tower.dto';
 import { TowerResponseDto } from './dto/tower-response.dto';
 import { TowerRepository } from './tower.repository';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { toPaginatedResult, toPrismaPage } from '../common/utils/pagination.util';
 
 @Injectable()
 export class TowerService {
@@ -48,9 +50,19 @@ export class TowerService {
     return tower as unknown as TowerResponseDto;
   }
 
-  async listTowers(): Promise<TowerResponseDto[]> {
-    const towers = await this.towerRepository.findAllTowers();
-    return towers as unknown as TowerResponseDto[];
+  async listTowers(dto: PaginationDto) {
+    const { skip, take } = toPrismaPage(dto);
+
+    const [towers, total] = await Promise.all([
+      this.towerRepository.findMany({
+        skip,
+        take,
+        orderBy: { name: 'asc' },
+      }),
+      this.towerRepository.count({}),
+    ]);
+
+    return toPaginatedResult(towers as unknown as TowerResponseDto[], total, dto);
   }
 
   async getTowerById(id: string): Promise<TowerResponseDto> {

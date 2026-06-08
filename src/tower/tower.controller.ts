@@ -14,6 +14,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -32,6 +33,8 @@ import { TowerService } from './tower.service';
 import { CreateTowerDto } from './dto/create-tower.dto';
 import { UpdateTowerDto } from './dto/update-tower.dto';
 import { TowerResponseDto } from './dto/tower-response.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { ApiPaginatedResponse } from '../common/decorators/api-paginated-response.decorator';
 
 @ApiTags('Towers')
 @ApiBearerAuth()
@@ -55,9 +58,9 @@ export class TowerController {
   @Get()
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'List all towers in the community' })
-  @ApiOkResponse({ type: [TowerResponseDto] })
-  async findAll(): Promise<TowerResponseDto[]> {
-    return this.towerService.listTowers();
+  @ApiPaginatedResponse(TowerResponseDto)
+  async findAll(@Query() dto: PaginationDto) {
+    return this.towerService.listTowers(dto);
   }
 
   @Get(':id')

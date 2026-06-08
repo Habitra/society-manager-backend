@@ -4,11 +4,15 @@ import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RequestUser } from '../auth/types/jwt-payload.type';
-import { PaginatedResult } from '../common/utils/pagination.util';
+import { PaginatedResult } from '../common/dto/api-response.dto';
 import { ResidentService } from './resident.service';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { ListResidentsDto } from './dto/list-residents.dto';
 import { AssignedUnitDto, ResidentCredentialsResponseDto, ResidentResponseDto } from './dto/resident-response.dto';
+import { UpdateResidentDto } from './dto/update-resident.dto';
+import { AddFamilyMemberDto } from './dto/add-family-member.dto';
+import { ReassignUnitDto } from './dto/reassign-unit.dto';
+import { ApiPaginatedResponse } from '../common/decorators/api-paginated-response.decorator';
 
 @ApiTags('Residents')
 @ApiBearerAuth()
@@ -30,6 +34,7 @@ export class ResidentController {
   @Get()
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.GUARD)
   @ApiOperation({ summary: 'List residents with filters and pagination' })
+  @ApiPaginatedResponse(ResidentResponseDto)
   async listResidents(@Query() dto: ListResidentsDto): Promise<PaginatedResult<ResidentResponseDto>> {
     return this.residentService.listResidents(dto);
   }
@@ -40,6 +45,42 @@ export class ResidentController {
   @ApiOkResponse({ type: ResidentResponseDto })
   async getResidentById(@Param('id', ParseUUIDPipe) id: string): Promise<ResidentResponseDto> {
     return this.residentService.getResidentById(id);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Update resident details' })
+  @ApiOkResponse({ type: ResidentResponseDto })
+  async updateResident(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateResidentDto,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    return this.residentService.updateResident(id, dto, user.id);
+  }
+
+  @Post(':id/family')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Add a family member to a resident account' })
+  @ApiCreatedResponse({ type: ResidentCredentialsResponseDto })
+  async addFamilyMember(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddFamilyMemberDto,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentCredentialsResponseDto> {
+    return this.residentService.addFamilyMember(id, dto, user.id);
+  }
+
+  @Patch(':id/units/reassign')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Reassign resident to a new unit' })
+  @ApiOkResponse({ type: ResidentResponseDto })
+  async reassignUnit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReassignUnitDto,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    return this.residentService.reassignUnit(id, dto, user.id);
   }
 
   @Patch(':id/activate')
