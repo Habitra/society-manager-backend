@@ -280,6 +280,20 @@ enum ReservationStatus {
   CANCELLED
 }
 
+enum WatchlistLevel {
+  NORMAL
+  WATCHLIST
+  RESTRICTED
+  BLACKLISTED
+}
+
+enum WatchlistEntityType {
+  VISITOR_NAME
+  VISITOR_PHONE
+  VEHICLE_NUMBER
+  VENDOR_NAME
+}
+
 // =============================================================================
 // DOMAIN: COMMUNITY (Tenant Root)
 // =============================================================================
@@ -328,6 +342,7 @@ model Community {
   importJobs               ImportJob[]
   amenities                Amenity[]
   amenityReservations      AmenityReservation[]
+  watchlists               SecurityWatchlist[]
 
   @@index([status])
   @@index([slug])
@@ -476,6 +491,7 @@ model User {
   vehicles                Vehicle[]
   importJobsCreated       ImportJob[]        @relation("ImportCreatedBy")
   amenityReservations     AmenityReservation[]
+  watchlistsCreated       SecurityWatchlist[]
 
   // Email must be unique per community (a user can exist in multiple communities
   // but as separate rows, since community contexts are isolated)
@@ -774,6 +790,32 @@ model GateEntry {
   @@index([communityId, inTime])
   @@index([communityId, visitorRequestId])
   @@map("gate_entries")
+}
+
+// =============================================================================
+// DOMAIN: SECURITY (Watchlist)
+// =============================================================================
+
+model SecurityWatchlist {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId String   @db.Uuid
+  entityType  WatchlistEntityType
+  entityValue String   @db.VarChar(200) // Phone number, vehicle number, or name
+  level       WatchlistLevel @default(WATCHLIST)
+  reason      String?  @db.VarChar(500)
+  addedById   String   @db.Uuid
+  isActive    Boolean  @default(true)
+  metadata    Json     @default("{}")
+
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Restrict)
+  addedBy     User      @relation(fields: [addedById], references: [id], onDelete: Restrict)
+
+  @@unique([communityId, entityType, entityValue])
+  @@index([communityId, level])
+  @@map("security_watchlists")
 }
 
 // =============================================================================
