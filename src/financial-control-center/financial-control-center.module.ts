@@ -4,9 +4,10 @@ import { FinancialControlCenterService } from './financial-control-center.servic
 import { PrismaModule } from '../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { AuditModule } from '../audit/audit.module';
+import { VendorsModule } from '../vendors/vendors.module';
 
 @Module({
-  imports: [PrismaModule, TenantModule, AuditModule],
+  imports: [PrismaModule, TenantModule, AuditModule, VendorsModule],
   controllers: [FinancialControlCenterController],
   providers: [FinancialControlCenterService],
 })

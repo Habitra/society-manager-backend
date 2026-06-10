@@ -59,6 +59,8 @@ import { AnnouncementModule } from './announcement/announcement.module';
 import { AmenityModule } from './amenity/amenity.module';
 import { FinancialControlCenterModule } from './financial-control-center/financial-control-center.module';
 import { SecurityModule } from './security/security.module';
+import { VendorsModule } from './vendors/vendors.module';
+import { ContractsModule } from './contracts/contracts.module';
 import { join } from 'path';
 
 @Module({
@@ -121,6 +123,8 @@ import { join } from 'path';
     AmenityModule,
     FinancialControlCenterModule,
     SecurityModule,
+    VendorsModule,
+    ContractsModule,
   ],
 
   controllers: [AppController],

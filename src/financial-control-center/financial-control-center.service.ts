@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { AuditService } from '../audit/audit.service';
 import { InvoiceStatus, AuditAction, NotificationChannel } from '@prisma/client';
+import { VendorsAnalyticsService } from '../vendors/vendors-analytics.service';
 
 @Injectable()
 export class FinancialControlCenterService {
@@ -10,6 +11,7 @@ export class FinancialControlCenterService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly auditService: AuditService,
+    private readonly vendorAnalytics: VendorsAnalyticsService,
   ) {}
 
   async getOverview() {
@@ -274,6 +276,8 @@ export class FinancialControlCenterService {
   }
 
   async getAnalytics() {
+    const vendorSpendData = await this.vendorAnalytics.getVendorSpendAnalytics();
+
     // Return mock structured data for Recharts, derived from actual data conceptually
     // For a real production app, this would use raw SQL group bys.
     return {
@@ -289,6 +293,7 @@ export class FinancialControlCenterService {
         { name: 'Tower A', amount: 45000 },
         { name: 'Tower B', amount: 20000 },
       ],
+      vendorSpend: vendorSpendData,
     };
   }
 
