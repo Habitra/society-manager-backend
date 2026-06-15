@@ -414,6 +414,10 @@ model Community {
   vendorPayments          VendorPayment[]
   VendorFeedback          VendorFeedback[]
   VendorPerformanceMetric VendorPerformanceMetric[]
+  gateAssignments         GateAssignment[]
+  guardShifts             GuardShift[]
+  guardAttendance         GuardAttendance[]
+  guardIncidents          GuardIncident[]
 
   @@index([status])
   @@index([slug])
@@ -546,6 +550,11 @@ model User {
   residentProfile ResidentProfile?
   adminProfile    AdminProfile?
   staffProfile    StaffProfile?
+
+  guardShifts         GuardShift[]      @relation("GuardShifts")
+  supervisorShifts    GuardShift[]      @relation("SupervisorShifts")
+  guardAttendance     GuardAttendance[]
+  guardIncidents      GuardIncident[]
 
   // Activity relations
   residentAssignments  ResidentUnitAssignment[]
@@ -1568,4 +1577,91 @@ model VendorPerformanceMetric {
   @@index([vendorId])
   @@index([metricType])
   @@map("vendor_performance_metrics")
+}
+
+// =============================================================================
+// DOMAIN: SECURITY GUARDS OPERATIONS
+// =============================================================================
+
+model GateAssignment {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId String   @map("community_id") @db.Uuid
+  name        String   @db.VarChar(100) // "Main Gate", "Service Gate", "Tower Gate", "Clubhouse Gate"
+  code        String   @db.VarChar(50) // e.g., "MAIN", "SERVICE", "TOWER", "CLUBHOUSE"
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  shifts    GuardShift[]
+
+  @@unique([communityId, name])
+  @@unique([communityId, code])
+  @@index([communityId])
+  @@map("gate_assignments")
+}
+
+model GuardShift {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId    String         @map("community_id") @db.Uuid
+  guardId        String         @map("guard_id") @db.Uuid
+  shiftType      String         @map("shift_type") @db.VarChar(50) // MORNING, EVENING, NIGHT, CUSTOM
+  startTime      String         @map("start_time") @db.VarChar(10) // e.g., "06:00"
+  endTime        String         @map("end_time") @db.VarChar(10) // e.g., "14:00"
+  gateId         String         @map("gate_id") @db.Uuid
+  supervisorId   String?        @map("supervisor_id") @db.Uuid
+  status         String         @default("ON_DUTY") // ON_DUTY, BREAK, OFF_DUTY
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  community  Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  guard      User           @relation("GuardShifts", fields: [guardId], references: [id], onDelete: Cascade)
+  supervisor User?          @relation("SupervisorShifts", fields: [supervisorId], references: [id], onDelete: SetNull)
+  gate       GateAssignment @relation(fields: [gateId], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+  @@index([guardId])
+  @@map("guard_shifts")
+}
+
+model GuardAttendance {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId String    @map("community_id") @db.Uuid
+  guardId     String    @map("guard_id") @db.Uuid
+  date        DateTime  @db.Date
+  checkIn     DateTime? @map("check_in") @db.Timestamptz
+  checkOut    DateTime? @map("check_out") @db.Timestamptz
+  totalHours  Decimal?  @map("total_hours") @db.Decimal(5, 2)
+  isLate      Boolean   @default(false) @map("is_late")
+  status      String    @default("PRESENT") // PRESENT, ABSENT, LATE
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  guard     User      @relation(fields: [guardId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, guardId, date])
+  @@index([communityId])
+  @@index([guardId])
+  @@map("guard_attendance")
+}
+
+model GuardIncident {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId    String    @map("community_id") @db.Uuid
+  guardId        String    @map("guard_id") @db.Uuid
+  incidentType   String    @map("incident_type") @db.VarChar(100) // UNAUTHORIZED_ENTRY, VENDOR_VIOLATION, RESIDENT_COMPLAINT, EMERGENCY, SECURITY_BREACH
+  severity       String    @db.VarChar(20) // LOW, MEDIUM, HIGH, CRITICAL
+  status         String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  incidentDate   DateTime  @map("incident_date") @db.Timestamptz
+  description    String    @db.Text
+  resolutionNote String?   @map("resolution_note") @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  guard     User      @relation(fields: [guardId], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+  @@index([guardId])
+  @@map("guard_incidents")
 }

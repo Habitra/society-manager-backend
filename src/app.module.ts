@@ -61,6 +61,7 @@ import { FinancialControlCenterModule } from './financial-control-center/financi
 import { SecurityModule } from './security/security.module';
 import { VendorsModule } from './vendors/vendors.module';
 import { ContractsModule } from './contracts/contracts.module';
+import { SecurityGuardsModule } from './security-guards/security-guards.module';
 import { join } from 'path';
 
 @Module({
@@ -125,6 +126,7 @@ import { join } from 'path';
     SecurityModule,
     VendorsModule,
     ContractsModule,
+    SecurityGuardsModule,
   ],
 
   controllers: [AppController],

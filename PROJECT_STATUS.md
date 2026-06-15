@@ -30,6 +30,8 @@
 - [x] GateEntryModule (Entry & exit tracking)
 - [x] Platform Super Admin Module (Cross-tenant access, Global stats, Community Admin creation)
 - [x] ResidentModule (Resident creation, temporary credentials, profile, assignment, lists, activation)
+- [x] VendorModule (Vendor registry, contract tracking, dashboard KPIs)
+- [x] SecurityGuardModule (Guard shifts, attendance tracking, incident logging, Live Security Snapshot)
 
 ## In Progress
 
@@ -37,12 +39,12 @@
 - [x] Local JWT AuthModule & First-Login enforcement
 - [x] Community Admin bootstrap via Community Creation
 - [x] Password Recovery (OTP-based)
+- [ ] Billing Module (Basic structure present, API endpoints in active development)
+- [ ] Maintenance Module (Ticketing and attachments actively present)
 
 ## Pending
 
 - [ ] Bulk Import Module (Excel/CSV for Towers, Units, Residents)
-- [ ] Maintenance Module
-- [ ] Billing Module
 - [ ] Announcement Module
 - [ ] Notification Module
 
@@ -350,15 +352,32 @@ D:\SOCIETY MANAGER\SRC
 - `GET /residents/:id/units` - Get assigned units
 - `GET /residents/:id/current-unit` - Get primary assigned unit
 
+**Vendors**
+- `GET /api/v1/vendors` - List and search outsourced vendors
+- `GET /api/v1/vendors/stats` - Get vendor statistics (total, active, monthly spend)
+- `GET /api/v1/vendors/:id` - Get specific vendor details
+- `GET /api/v1/vendors/:id/contracts` - Get contracts for a specific vendor
+
+**Security Guards**
+- `GET /api/v1/security-guards` - List and search security guards
+- `GET /api/v1/security-guards/stats` - Get live security snapshot (total, on duty, incidents)
+- `GET /api/v1/security-guards/shifts` - View current duty roster and schedules
+- `GET /api/v1/security-guards/attendance` - View clock-in/clock-out records
+- `GET /api/v1/security-guards/incidents` - View security incidents
+- `GET /api/v1/security-guards/compensation` - View compensation/vendor mapping
+- `GET /api/v1/security-guards/:id` - Get specific security guard details
+
 # Development Timeline
 
 * **[Phase 1] Backend Foundation**: Completed base infrastructure including Supabase auth, multi-tenancy middleware, audit interceptors, and error handling.
 * **[Phase 1] Property Management**: Completed creation of `Community`, `Tower`, `Unit`, and `ResidentAssignment` modules with comprehensive testing and swagger integrations.
+* **[Phase 2] Operations Management**: Completed creation of `VendorModule` for third-party agency tracking, and the `SecurityGuardModule` utilizing existing User models for streamlined Phase 1 deployment. Both seamlessly integrated with a React/Vite Frontend using TanStack Query.
 
 # Decisions Log
 
 * **Multi-tenancy Strategy**: Chose a shared database and shared schema model relying on logical isolation (`communityId`). This approach scales better regarding migration management and aggregate analytics compared to schema-per-tenant, effectively securing data using a request-scoped `BaseRepository`.
 * **Authentication Service**: Custom Local JWT authentication replacing Supabase Auth. Includes a top-down onboarding hierarchy, account locking, and first-login password enforcement.
+* **Security Guard Architecture**: Decided NOT to create a separate `GUARD` system role to minimize complexity. Security Guards are structured as `User` entities linked to a `StaffProfile` with the `StaffCategory.SECURITY_GUARD` enum. This allows integration into existing personnel structures and avoids redundant HR schemas. Phase 2 will introduce complex HR features (Leaves/Compliance).
 * **Audit Logging**: Handled via asynchronous (fire-and-forget) service execution and global interceptor bindings. This guarantees an immutable audit trail for all modification endpoints (`POST`, `PATCH`, `DELETE`) without blocking fast request response times.
 
 # Next Recommended Task
