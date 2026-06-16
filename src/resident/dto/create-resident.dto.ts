@@ -6,12 +6,7 @@ export class CreateResidentDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  firstName!: string;
-
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  lastName!: string;
+  fullName!: string;
 
   @ApiProperty()
   @IsString()
@@ -21,6 +16,31 @@ export class CreateResidentDto {
   @ApiProperty()
   @IsEmail()
   email!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  emergencyContactName!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  emergencyContactNumber!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  emergencyContactRelation!: string;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID()

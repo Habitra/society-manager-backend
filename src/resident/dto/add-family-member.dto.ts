@@ -5,12 +5,7 @@ export class AddFamilyMemberDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  firstName!: string;
-
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  lastName!: string;
+  fullName!: string;
 
   @ApiProperty()
   @IsString()

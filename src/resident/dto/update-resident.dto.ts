@@ -5,12 +5,7 @@ export class UpdateResidentDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  firstName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  lastName?: string;
+  fullName?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

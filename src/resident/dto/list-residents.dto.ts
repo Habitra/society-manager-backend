@@ -41,4 +41,9 @@ export class ListResidentsDto extends PaginationDto {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   firstLoginPending?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filter by verification stage', enum: ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED'] })
+  @IsOptional()
+  @IsString()
+  verificationStage?: string;
 }

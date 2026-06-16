@@ -15,6 +15,7 @@ export class ResidentProfileDto {
   @ApiPropertyOptional() dateOfBirth?: Date | null;
   @ApiProperty() vehicleCount!: number;
   @ApiProperty() isCommitteeMember!: boolean;
+  @ApiProperty() verificationStage!: string;
 }
 
 export class ResidentResponseDto {
@@ -23,6 +24,7 @@ export class ResidentResponseDto {
   @ApiProperty() displayName!: string;
   @ApiProperty() email!: string;
   @ApiProperty() phone!: string;
+  @ApiProperty() role!: string;
   @ApiProperty({ enum: UserStatus }) status!: UserStatus;
   @ApiProperty() firstLoginCompleted!: boolean;
   @ApiPropertyOptional() lastLoginAt?: Date | null;

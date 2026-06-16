@@ -61,6 +61,21 @@ enum UserStatus {
   PENDING_VERIFICATION
 }
 
+/// Verification stage for residents
+enum VerificationStage {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+/// Document verification status
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 /// Whether a unit is owner-occupied or tenant-occupied (impacts billing)
 enum UnitOccupancyType {
   OWNER
@@ -398,6 +413,7 @@ model Community {
   staffProfiles           StaffProfile[]
   residentUnitAssignments ResidentUnitAssignment[]
   visitorRequests         VisitorRequest[]
+  residentDocuments       ResidentDocument[]
   maintenanceTickets      MaintenanceTicket[]
   invoices                Invoice[]
   passwordResetOtps       PasswordResetOtp[]
@@ -551,10 +567,10 @@ model User {
   adminProfile    AdminProfile?
   staffProfile    StaffProfile?
 
-  guardShifts         GuardShift[]      @relation("GuardShifts")
-  supervisorShifts    GuardShift[]      @relation("SupervisorShifts")
-  guardAttendance     GuardAttendance[]
-  guardIncidents      GuardIncident[]
+  guardShifts      GuardShift[]      @relation("GuardShifts")
+  supervisorShifts GuardShift[]      @relation("SupervisorShifts")
+  guardAttendance  GuardAttendance[]
+  guardIncidents   GuardIncident[]
 
   // Activity relations
   residentAssignments  ResidentUnitAssignment[]
@@ -575,6 +591,7 @@ model User {
   blacklistedVendors   Vendor[]                 @relation("VendorBlacklistedBy")
   contractRenewals     ContractRenewalHistory[] @relation("ContractRenewedBy")
   VendorFeedback       VendorFeedback[]
+  documentsVerified    ResidentDocument[]       @relation("DocumentVerifiedBy")
 
   // Email must be unique per community (a user can exist in multiple communities
   // but as separate rows, since community contexts are isolated)
@@ -590,24 +607,50 @@ model User {
 /// Extended profile for residents (flat owners and tenants).
 /// One-to-one with User; only users with role = RESIDENT | FAMILY_MEMBER.
 model ResidentProfile {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId            String    @unique @db.Uuid
-  communityId       String    @db.Uuid // Denormalized for efficient tenant filtering
-  occupation        String?   @db.VarChar(200)
-  dateOfBirth       DateTime? @db.Date
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String            @unique @db.Uuid
+  communityId       String            @db.Uuid // Denormalized for efficient tenant filtering
+  occupation        String?           @db.VarChar(200)
+  dateOfBirth       DateTime?         @db.Date
   emergencyContact  Json? // { name, phone, relation }
-  vehicleCount      Int       @default(0)
-  isCommitteeMember Boolean   @default(false)
-  metadata          Json      @default("{}")
+  vehicleCount      Int               @default(0)
+  isCommitteeMember Boolean           @default(false)
+  verificationStage VerificationStage @default(PENDING)
+  metadata          Json              @default("{}")
 
   createdAt DateTime  @default(now()) @db.Timestamptz
   updatedAt DateTime  @updatedAt @db.Timestamptz
   deletedAt DateTime? @db.Timestamptz
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents ResidentDocument[]
 
   @@index([communityId])
+  @@index([communityId, verificationStage])
   @@map("resident_profiles")
+}
+
+/// Dedicated document storage for resident verification (KYC, address proof, etc.)
+model ResidentDocument {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId        String         @db.Uuid
+  residentProfileId  String         @db.Uuid
+  documentType       String         @db.VarChar(100) // e.g., "GOVT_ID", "ADDRESS_PROOF", "OWNERSHIP_PROOF", "RENTAL_AGREEMENT"
+  fileUrl            String         @db.Text
+  verificationStatus DocumentStatus @default(PENDING)
+  uploadedAt         DateTime       @default(now()) @db.Timestamptz
+  verifiedAt         DateTime?      @db.Timestamptz
+  verifiedById       String?        @db.Uuid
+  metadata           Json           @default("{}")
+
+  community       Community       @relation(fields: [communityId], references: [id], onDelete: Restrict)
+  residentProfile ResidentProfile @relation(fields: [residentProfileId], references: [id], onDelete: Cascade)
+  verifiedBy      User?           @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([communityId])
+  @@index([residentProfileId])
+  @@index([communityId, verificationStatus])
+  @@map("resident_documents")
 }
 
 /// Tracks OTPs issued for password recovery
@@ -1591,7 +1634,7 @@ model GateAssignment {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  community Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
   shifts    GuardShift[]
 
   @@unique([communityId, name])
@@ -1601,17 +1644,17 @@ model GateAssignment {
 }
 
 model GuardShift {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  communityId    String         @map("community_id") @db.Uuid
-  guardId        String         @map("guard_id") @db.Uuid
-  shiftType      String         @map("shift_type") @db.VarChar(50) // MORNING, EVENING, NIGHT, CUSTOM
-  startTime      String         @map("start_time") @db.VarChar(10) // e.g., "06:00"
-  endTime        String         @map("end_time") @db.VarChar(10) // e.g., "14:00"
-  gateId         String         @map("gate_id") @db.Uuid
-  supervisorId   String?        @map("supervisor_id") @db.Uuid
-  status         String         @default("ON_DUTY") // ON_DUTY, BREAK, OFF_DUTY
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId  String   @map("community_id") @db.Uuid
+  guardId      String   @map("guard_id") @db.Uuid
+  shiftType    String   @map("shift_type") @db.VarChar(50) // MORNING, EVENING, NIGHT, CUSTOM
+  startTime    String   @map("start_time") @db.VarChar(10) // e.g., "06:00"
+  endTime      String   @map("end_time") @db.VarChar(10) // e.g., "14:00"
+  gateId       String   @map("gate_id") @db.Uuid
+  supervisorId String?  @map("supervisor_id") @db.Uuid
+  status       String   @default("ON_DUTY") // ON_DUTY, BREAK, OFF_DUTY
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   community  Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
   guard      User           @relation("GuardShifts", fields: [guardId], references: [id], onDelete: Cascade)
@@ -1646,17 +1689,17 @@ model GuardAttendance {
 }
 
 model GuardIncident {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  communityId    String    @map("community_id") @db.Uuid
-  guardId        String    @map("guard_id") @db.Uuid
-  incidentType   String    @map("incident_type") @db.VarChar(100) // UNAUTHORIZED_ENTRY, VENDOR_VIOLATION, RESIDENT_COMPLAINT, EMERGENCY, SECURITY_BREACH
-  severity       String    @db.VarChar(20) // LOW, MEDIUM, HIGH, CRITICAL
-  status         String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
-  incidentDate   DateTime  @map("incident_date") @db.Timestamptz
-  description    String    @db.Text
-  resolutionNote String?   @map("resolution_note") @db.Text
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  communityId    String   @map("community_id") @db.Uuid
+  guardId        String   @map("guard_id") @db.Uuid
+  incidentType   String   @map("incident_type") @db.VarChar(100) // UNAUTHORIZED_ENTRY, VENDOR_VIOLATION, RESIDENT_COMPLAINT, EMERGENCY, SECURITY_BREACH
+  severity       String   @db.VarChar(20) // LOW, MEDIUM, HIGH, CRITICAL
+  status         String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  incidentDate   DateTime @map("incident_date") @db.Timestamptz
+  description    String   @db.Text
+  resolutionNote String?  @map("resolution_note") @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   guard     User      @relation(fields: [guardId], references: [id], onDelete: Cascade)

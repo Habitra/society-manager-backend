@@ -51,6 +51,7 @@ export class ResidentService {
       displayName: user.displayName,
       email: user.email,
       phone: user.phone,
+      role: user.role,
       status: user.status,
       firstLoginCompleted: user.firstLoginCompleted,
       lastLoginAt: user.lastLoginAt,
@@ -62,6 +63,7 @@ export class ResidentService {
         dateOfBirth: user.residentProfile!.dateOfBirth,
         vehicleCount: user.residentProfile!.vehicleCount,
         isCommitteeMember: user.residentProfile!.isCommitteeMember,
+        verificationStage: user.residentProfile!.verificationStage as any,
       },
       assignedUnits: user.residentAssignments.map(a => ({
         unitId: a.unitId,
@@ -92,38 +94,60 @@ export class ResidentService {
       throw new NotFoundException(`Unit '${dto.unitId}' not found in this community.`);
     }
 
-    const tempPassword = this.generateTemporaryPassword();
+    // Owner Validation Rule
+    if (dto.occupancyType === OccupancyType.OWNER_RESIDENT || dto.occupancyType === OccupancyType.OWNER_NON_RESIDENT) {
+      const existingOwner = await this.prisma.residentUnitAssignment.findFirst({
+        where: {
+          communityId,
+          unitId: dto.unitId,
+          occupancyType: { in: [OccupancyType.OWNER_RESIDENT, OccupancyType.OWNER_NON_RESIDENT] },
+          deletedAt: null,
+        }
+      });
+      if (existingOwner) {
+        throw new ConflictException(`Unit ${unit.unitNumber} already has an active owner.`);
+      }
+    }
+
+    const tempPassword = this.generateSecureTemporaryPassword();
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
 
-    const displayName = `${dto.firstName} ${dto.lastName}`.trim();
-
     const createdResident = await this.prisma.$transaction(async (tx) => {
       const community = await tx.community.findUniqueOrThrow({ where: { id: communityId } });
+      
+      const currentYear = new Date().getFullYear().toString();
       const seq = await tx.usernameSequence.upsert({
         where: { communityId_userType: { communityId, userType: 'RESIDENT' } },
         update: { nextValue: { increment: 1 } },
         create: { communityId, userType: 'RESIDENT', nextValue: 2 },
       });
 
-      const sequenceString = (seq.nextValue - 1).toString().padStart(6, '0');
-      const username = `${community.code}-${sequenceString}`;
+      const sequenceString = (seq.nextValue - 1).toString().padStart(4, '0');
+      const username = `RES${currentYear}${sequenceString}`;
+
+      const emergencyContact = {
+        name: dto.emergencyContactName,
+        phone: dto.emergencyContactNumber,
+        relation: dto.emergencyContactRelation,
+      };
 
       const user = await tx.user.create({
         data: {
           communityId,
           role: UserRole.RESIDENT,
-          status: UserStatus.ACTIVE, // Assuming active but requires password change
+          status: UserStatus.PENDING_VERIFICATION,
           username,
           email: dto.email,
           phone: dto.phone,
           passwordHash,
-          displayName,
+          displayName: dto.fullName,
           firstLoginCompleted: false,
           mustChangePassword: true,
           residentProfile: {
             create: {
               communityId,
+              emergencyContact,
             },
           },
           residentAssignments: {
@@ -151,7 +175,23 @@ export class ResidentService {
       action: AuditAction.CREATE,
       tableName: 'users',
       recordId: createdResident.id,
-      newValues: { username: createdResident.username, email: createdResident.email },
+      newValues: { event: 'Resident Registered', username: createdResident.username, email: createdResident.email },
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.CREATE,
+      tableName: 'resident_unit_assignments',
+      recordId: createdResident.id,
+      newValues: { event: 'Unit Assigned', unitId: dto.unitId, occupancyType: dto.occupancyType },
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.CREATE,
+      tableName: 'users',
+      recordId: createdResident.id,
+      newValues: { event: 'Credentials Generated', action: 'Initial Setup' },
     });
 
     return {
@@ -161,6 +201,53 @@ export class ResidentService {
         temporaryPassword: tempPassword,
       },
     };
+  }
+
+  private generateSecureTemporaryPassword(): string {
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const special = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    
+    let password = '';
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += special[Math.floor(Math.random() * special.length)];
+    
+    const allChars = uppercase + lowercase + numbers + special;
+    while (password.length < 12) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+    
+    return password.split('').sort(() => 0.5 - Math.random()).join('');
+  }
+
+  async resetPassword(id: string, actorId: string): Promise<{ temporaryPassword: string }> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    const tempPassword = this.generateSecureTemporaryPassword();
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
+
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+      },
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'users',
+      recordId: id,
+      newValues: { event: 'Password Reset', action: 'Generated New Temporary Password' },
+    });
+
+    return { temporaryPassword: tempPassword };
   }
 
   async listResidents(dto: ListResidentsDto): Promise<PaginatedResult<ResidentResponseDto>> {
@@ -199,6 +286,12 @@ export class ResidentService {
           ...(dto.occupancyType ? { occupancyType: dto.occupancyType } : {}),
           ...(dto.towerId ? { unit: { towerId: dto.towerId } } : {}),
         },
+      };
+    }
+
+    if (dto.verificationStage) {
+      where.residentProfile = {
+        verificationStage: dto.verificationStage as any,
       };
     }
 
@@ -251,18 +344,14 @@ export class ResidentService {
     }
 
     let displayName = user.displayName;
-    if (dto.firstName || dto.lastName) {
-      // Very naive split for simplicity; typically you'd want actual firstName/lastName fields
-      const parts = user.displayName.split(' ');
-      const currentFirst = parts[0] || '';
-      const currentLast = parts.slice(1).join(' ') || '';
-      displayName = `${dto.firstName ?? currentFirst} ${dto.lastName ?? currentLast}`.trim();
+    if (dto.fullName) {
+      displayName = dto.fullName.trim();
     }
 
     const updated = await this.residentRepository.update(id, {
       ...(dto.email ? { email: dto.email } : {}),
       ...(dto.phone ? { phone: dto.phone } : {}),
-      ...(dto.firstName || dto.lastName ? { displayName } : {}),
+      ...(dto.fullName ? { displayName } : {}),
     });
 
     void this.auditService.write({
@@ -296,27 +385,28 @@ export class ResidentService {
       throw new NotFoundException(`Unit '${dto.unitId}' not found.`);
     }
 
-    const tempPassword = this.generateTemporaryPassword();
+    const tempPassword = this.generateSecureTemporaryPassword();
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
-    const displayName = `${dto.firstName} ${dto.lastName}`.trim();
+    const displayName = dto.fullName.trim();
 
     const createdFamilyMember = await this.prisma.$transaction(async (tx) => {
       const community = await tx.community.findUniqueOrThrow({ where: { id: this.tenantContext.communityId } });
+      const currentYear = new Date().getFullYear().toString();
       const seq = await tx.usernameSequence.upsert({
         where: { communityId_userType: { communityId: this.tenantContext.communityId, userType: 'FAMILY_MEMBER' } },
         update: { nextValue: { increment: 1 } },
         create: { communityId: this.tenantContext.communityId, userType: 'FAMILY_MEMBER', nextValue: 2 },
       });
 
-      const sequenceString = (seq.nextValue - 1).toString().padStart(6, '0');
-      const username = `${community.code}-FAM-${sequenceString}`;
+      const sequenceString = (seq.nextValue - 1).toString().padStart(4, '0');
+      const username = `RES${currentYear}${sequenceString}`;
 
       const user = await tx.user.create({
         data: {
           communityId: this.tenantContext.communityId,
           role: UserRole.FAMILY_MEMBER,
-          status: UserStatus.ACTIVE,
+          status: UserStatus.PENDING_VERIFICATION,
           username,
           email: dto.email || `${username}@placeholder.com`, // Email is unique and required in schema
           phone: dto.phone,
@@ -444,28 +534,261 @@ export class ResidentService {
     return this.mapResidentToDto(user);
   }
 
-  async resetPassword(id: string, actorId: string): Promise<{ temporaryPassword: string }> {
+
+
+  // ===========================================================================
+  // RESIDENT OPERATIONS CENTER (PHASES 2-12)
+  // ===========================================================================
+
+  async getDashboardMetrics(): Promise<any> {
+    const communityId = this.tenantContext.communityId;
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    const [
+      totalResidents,
+      owners,
+      tenants,
+      suspendedAccounts,
+      vacantUnits,
+      pendingVerification,
+      recentlyMovedIn,
+      recentlyMovedOut
+    ] = await Promise.all([
+      this.prisma.user.count({ where: { communityId, role: { in: [UserRole.RESIDENT, UserRole.FAMILY_MEMBER] }, deletedAt: null } }),
+      this.prisma.residentUnitAssignment.count({ where: { communityId, occupancyType: { in: [OccupancyType.OWNER_RESIDENT, OccupancyType.OWNER_NON_RESIDENT] }, deletedAt: null, moveOutDate: null } }),
+      this.prisma.residentUnitAssignment.count({ where: { communityId, occupancyType: OccupancyType.TENANT, deletedAt: null, moveOutDate: null } }),
+      this.prisma.user.count({ where: { communityId, role: { in: [UserRole.RESIDENT, UserRole.FAMILY_MEMBER] }, status: UserStatus.SUSPENDED, deletedAt: null } }),
+      this.prisma.unit.count({ where: { communityId, occupancy: 'VACANT', deletedAt: null } }),
+      this.prisma.residentProfile.count({ where: { communityId, verificationStage: 'PENDING' } }),
+      this.prisma.residentUnitAssignment.count({ where: { communityId, deletedAt: null, moveInDate: { gte: thirtyDaysAgo } } }),
+      this.prisma.residentUnitAssignment.count({ where: { communityId, moveOutDate: { gte: thirtyDaysAgo } } })
+    ]);
+
+    return {
+      totalResidents,
+      owners,
+      tenants,
+      vacantUnits,
+      pendingVerification,
+      suspendedAccounts,
+      recentlyMovedIn,
+      recentlyMovedOut
+    };
+  }
+
+  async updateVerificationStage(id: string, stage: 'APPROVED' | 'REJECTED' | 'UNDER_REVIEW', actorId: string): Promise<ResidentResponseDto> {
     const user = await this.residentRepository.findResidentById(id);
     if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
 
-    const tempPassword = this.generateTemporaryPassword();
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
-
-    await this.residentRepository.update(id, {
-      passwordHash,
-      mustChangePassword: true,
-      refreshTokenHash: null,
+    await this.prisma.residentProfile.update({
+      where: { userId: id },
+      data: { verificationStage: stage as any }
     });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'resident_profiles',
+      recordId: user.residentProfile!.id,
+      newValues: { verificationStage: stage },
+    });
+
+    return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
+  }
+
+  async sendOnboardingOtp(id: string, actorId: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    // Reusing PasswordResetOtp as instructed
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+
+    await this.prisma.passwordResetOtp.create({
+      data: {
+        communityId: this.tenantContext.communityId,
+        phone: user.phone,
+        otpHash,
+        expiresAt,
+      }
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.CREATE,
+      tableName: 'password_reset_otps',
+      recordId: user.id, // Using user ID as reference
+      newValues: { purpose: 'ONBOARDING_OTP', phone: user.phone },
+    });
+
+    // In a real system, send SMS here. For now, we simulate it.
+    console.log(`[ONBOARDING OTP] Sent ${otp} to ${user.phone}`);
+    return { success: true, message: 'OTP Sent successfully' };
+  }
+
+  async verifyOnboardingOtp(id: string, otp: string, actorId: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    const latestOtp = await this.prisma.passwordResetOtp.findFirst({
+      where: { phone: user.phone, isUsed: false, expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: 'desc' },
+    });
+
+    if (!latestOtp) throw new NotFoundException('No active OTP found or OTP expired');
+
+    const isValid = await bcrypt.compare(otp, latestOtp.otpHash);
+    if (!isValid) throw new ConflictException('Invalid OTP');
+
+    await this.prisma.$transaction([
+      this.prisma.passwordResetOtp.update({
+        where: { id: latestOtp.id },
+        data: { isUsed: true },
+      }),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { status: UserStatus.ACTIVE },
+      })
+    ]);
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'users',
+      recordId: user.id,
+      newValues: { status: UserStatus.ACTIVE, onboardingCompleted: true },
+    });
+
+    return { success: true, message: 'OTP Verified successfully. Resident is now Active.' };
+  }
+
+  async getOccupancy(): Promise<any[]> {
+    const assignments = await this.prisma.residentUnitAssignment.findMany({
+      where: { communityId: this.tenantContext.communityId, deletedAt: null },
+      include: {
+        user: { select: { id: true, displayName: true, phone: true, role: true } },
+        unit: { include: { tower: true } }
+      },
+      orderBy: { unit: { unitNumber: 'asc' } }
+    });
+    return assignments;
+  }
+
+  async getVehicles(): Promise<any[]> {
+    const vehicles = await this.prisma.vehicle.findMany({
+      where: { communityId: this.tenantContext.communityId, deletedAt: null, user: { role: { in: [UserRole.RESIDENT, UserRole.FAMILY_MEMBER] } } },
+      include: {
+        user: { select: { id: true, displayName: true, phone: true } },
+        unit: { include: { tower: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return vehicles;
+  }
+
+  async suspendAccess(id: string, actorId: string, reason?: string): Promise<ResidentResponseDto> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    await this.residentRepository.update(id, { status: UserStatus.SUSPENDED });
 
     void this.auditService.write({
       actorId,
       action: AuditAction.UPDATE,
       tableName: 'users',
       recordId: id,
-      newValues: { mustChangePassword: true },
+      newValues: { status: UserStatus.SUSPENDED, reason },
     });
 
-    return { temporaryPassword: tempPassword };
+    return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
+  }
+
+  async restoreAccess(id: string, actorId: string, reason?: string): Promise<ResidentResponseDto> {
+    const user = await this.residentRepository.findResidentById(id);
+    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
+
+    await this.residentRepository.update(id, { status: UserStatus.ACTIVE });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'users',
+      recordId: id,
+      newValues: { status: UserStatus.ACTIVE, reason },
+    });
+
+    return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
+  }
+
+  async processHandover(unitId: string, currentOwnerId: string, newOwnerId: string, actorId: string): Promise<{ success: boolean }> {
+    const communityId = this.tenantContext.communityId;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Move out current owner
+      await tx.residentUnitAssignment.updateMany({
+        where: { unitId, userId: currentOwnerId, communityId, deletedAt: null },
+        data: { moveOutDate: new Date(), deletedAt: new Date() }
+      });
+
+      // 2. Clear vehicles linked to the unit and current owner
+      await tx.vehicle.updateMany({
+        where: { unitId, userId: currentOwnerId, communityId, deletedAt: null },
+        data: { deletedAt: new Date() }
+      });
+
+      // 3. Add new owner
+      await tx.residentUnitAssignment.create({
+        data: {
+          communityId,
+          userId: newOwnerId,
+          unitId,
+          occupancyType: OccupancyType.OWNER_RESIDENT,
+          isPrimary: true,
+          moveInDate: new Date()
+        }
+      });
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'units',
+      recordId: unitId,
+      newValues: { event: 'HANDOVER_COMPLETED', from: currentOwnerId, to: newOwnerId },
+    });
+
+    return { success: true };
+  }
+
+  async getResidentAuditTrail(id: string): Promise<any[]> {
+    const logs = await this.prisma.auditLog.findMany({
+      where: {
+        communityId: this.tenantContext.communityId,
+        OR: [
+          { recordId: id }, // Direct updates to user
+          { oldValues: { string_contains: id } as any },
+          { newValues: { string_contains: id } as any }
+        ]
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    return logs;
+  }
+
+  async getAnalytics(): Promise<any> {
+    const communityId = this.tenantContext.communityId;
+    
+    // Group by Occupancy Type
+    const occupancyData = await this.prisma.residentUnitAssignment.groupBy({
+      by: ['occupancyType'],
+      where: { communityId, deletedAt: null },
+      _count: { id: true }
+    });
+
+    return {
+      occupancyTrend: occupancyData.map(d => ({ name: d.occupancyType, count: d._count.id }))
+    };
   }
 }

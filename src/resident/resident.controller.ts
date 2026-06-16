@@ -39,6 +39,13 @@ export class ResidentController {
     return this.residentService.listResidents(dto);
   }
 
+  @Get('dashboard')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get KPI metrics for Resident Operations Center dashboard' })
+  async getDashboardMetrics(): Promise<any> {
+    return this.residentService.getDashboardMetrics();
+  }
+
   @Get(':id')
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
   @ApiOperation({ summary: 'Get resident details by ID' })
@@ -131,5 +138,107 @@ export class ResidentController {
   async getCurrentUnit(@Param('id', ParseUUIDPipe) id: string): Promise<AssignedUnitDto | null> {
     const resident = await this.residentService.getResidentById(id);
     return resident.assignedUnits.find((u) => u.isPrimary) || null;
+  }
+
+  // ===========================================================================
+  // RESIDENT OPERATIONS CENTER (PHASES 4-5)
+  // ===========================================================================
+
+  @Patch(':id/verify')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Update verification stage of a resident' })
+  async updateVerificationStage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('stage') stage: 'APPROVED' | 'REJECTED' | 'UNDER_REVIEW',
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    return this.residentService.updateVerificationStage(id, stage, user.id);
+  }
+
+  @Post(':id/send-otp')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Send an onboarding OTP to a pending resident' })
+  async sendOnboardingOtp(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.residentService.sendOnboardingOtp(id, user.id);
+  }
+
+  @Post(':id/verify-otp')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Verify the onboarding OTP for a resident' })
+  async verifyOnboardingOtp(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('otp') otp: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.residentService.verifyOnboardingOtp(id, otp, user.id);
+  }
+
+  // ===========================================================================
+  // RESIDENT OPERATIONS CENTER (PHASES 6-12)
+  // ===========================================================================
+
+  @Get('occupancy')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get occupancy details' })
+  async getOccupancy(): Promise<any[]> {
+    return this.residentService.getOccupancy();
+  }
+
+  @Get('vehicles')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get all resident vehicles' })
+  async getVehicles(): Promise<any[]> {
+    return this.residentService.getVehicles();
+  }
+
+  @Patch(':id/suspend')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Suspend resident access' })
+  async suspendAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    return this.residentService.suspendAccess(id, user.id, reason);
+  }
+
+  @Patch(':id/restore')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Restore resident access' })
+  async restoreAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    return this.residentService.restoreAccess(id, user.id, reason);
+  }
+
+  @Post('handover')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Process unit handover' })
+  async processHandover(
+    @Body('unitId') unitId: string,
+    @Body('currentOwnerId') currentOwnerId: string,
+    @Body('newOwnerId') newOwnerId: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<{ success: boolean }> {
+    return this.residentService.processHandover(unitId, currentOwnerId, newOwnerId, user.id);
+  }
+
+  @Get(':id/audit')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get resident audit trail' })
+  async getResidentAuditTrail(@Param('id', ParseUUIDPipe) id: string): Promise<any[]> {
+    return this.residentService.getResidentAuditTrail(id);
+  }
+
+  @Get('analytics')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get resident analytics' })
+  async getAnalytics(): Promise<any> {
+    return this.residentService.getAnalytics();
   }
 }
