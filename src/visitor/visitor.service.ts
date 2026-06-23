@@ -158,4 +158,27 @@ export class VisitorService {
 
     return updated as unknown as VisitorRequestResponseDto;
   }
+
+  async deleteRequest(id: string, actorId: string): Promise<{ success: boolean }> {
+    const request = await this.visitorRepository.findById(id);
+    if (!request) {
+      throw new NotFoundException(`Visitor request '${id}' not found.`);
+    }
+
+    // Usually we do a soft delete or just delete
+    // Wait, visitorRepository doesn't have delete out of the box, let's use Prisma directly
+    // Wait, visitorRepository might have `delete` or `update`.
+    // Let's just update the status to CANCELLED or soft delete it by updating deletedAt if it exists.
+    // The schema has `deletedAt: null` in the `listAllVisitors` return signature.
+    await this.visitorRepository.update(id, { deletedAt: new Date() });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.DELETE,
+      tableName: 'visitor_requests',
+      recordId: id,
+    });
+
+    return { success: true };
+  }
 }

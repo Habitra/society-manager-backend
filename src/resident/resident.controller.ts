@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, ForbiddenException } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -47,15 +47,21 @@ export class ResidentController {
   }
 
   @Get(':id')
-  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.RESIDENT)
   @ApiOperation({ summary: 'Get resident details by ID' })
   @ApiOkResponse({ type: ResidentResponseDto })
-  async getResidentById(@Param('id', ParseUUIDPipe) id: string): Promise<ResidentResponseDto> {
+  async getResidentById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    if (user.role === UserRole.RESIDENT && user.id !== id) {
+      throw new ForbiddenException('You can only access your own profile');
+    }
     return this.residentService.getResidentById(id);
   }
 
   @Patch(':id')
-  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.RESIDENT)
   @ApiOperation({ summary: 'Update resident details' })
   @ApiOkResponse({ type: ResidentResponseDto })
   async updateResident(
@@ -63,6 +69,9 @@ export class ResidentController {
     @Body() dto: UpdateResidentDto,
     @CurrentUser() user: RequestUser,
   ): Promise<ResidentResponseDto> {
+    if (user.role === UserRole.RESIDENT && user.id !== id) {
+      throw new ForbiddenException('You can only update your own profile');
+    }
     return this.residentService.updateResident(id, dto, user.id);
   }
 
@@ -126,7 +135,13 @@ export class ResidentController {
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.RESIDENT)
   @ApiOperation({ summary: 'Get all units assigned to a resident' })
   @ApiOkResponse({ type: [AssignedUnitDto] })
-  async getAssignedUnits(@Param('id', ParseUUIDPipe) id: string): Promise<AssignedUnitDto[]> {
+  async getAssignedUnits(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<AssignedUnitDto[]> {
+    if (user.role === UserRole.RESIDENT && user.id !== id) {
+      throw new ForbiddenException('You can only access your own assigned units');
+    }
     const resident = await this.residentService.getResidentById(id);
     return resident.assignedUnits;
   }
@@ -135,7 +150,13 @@ export class ResidentController {
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.RESIDENT)
   @ApiOperation({ summary: 'Get the primary unit assigned to a resident' })
   @ApiOkResponse({ type: AssignedUnitDto })
-  async getCurrentUnit(@Param('id', ParseUUIDPipe) id: string): Promise<AssignedUnitDto | null> {
+  async getCurrentUnit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<AssignedUnitDto | null> {
+    if (user.role === UserRole.RESIDENT && user.id !== id) {
+      throw new ForbiddenException('You can only access your own primary unit');
+    }
     const resident = await this.residentService.getResidentById(id);
     return resident.assignedUnits.find((u) => u.isPrimary) || null;
   }

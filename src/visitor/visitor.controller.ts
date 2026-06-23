@@ -1,5 +1,5 @@
 // src/visitor/visitor.controller.ts
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, HttpCode, HttpStatus, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, HttpCode, HttpStatus, Query, Delete } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -77,5 +77,16 @@ export class VisitorController {
     @CurrentUser() user: RequestUser,
   ): Promise<VisitorRequestResponseDto> {
     return this.visitorService.rejectOnArrival(id, user.id);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.RESIDENT, UserRole.COMMUNITY_ADMIN)
+  @ApiOperation({ summary: 'Delete a visitor request' })
+  @ApiOkResponse({ description: 'Visitor successfully deleted' })
+  async deleteVisitor(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.visitorService.deleteRequest(id, user.id);
   }
 }

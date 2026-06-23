@@ -112,6 +112,19 @@ export class AmenityService {
     });
   }
 
+  async getMyReservations(residentId: string) {
+    return this.prisma.amenityReservation.findMany({
+      where: {
+        communityId: this.tenantContext.communityId,
+        residentId,
+      },
+      include: {
+        amenity: true,
+      },
+      orderBy: { bookingDate: 'desc' },
+    });
+  }
+
   async getCalendarEvents(start: Date, end: Date) {
     return this.prisma.amenityReservation.findMany({
       where: {

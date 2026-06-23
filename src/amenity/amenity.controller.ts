@@ -30,6 +30,11 @@ export class AmenityController {
     return this.amenityService.getReservations();
   }
 
+  @Get('reservations/my')
+  findMyReservations(@Req() req: any) {
+    return this.amenityService.getMyReservations(req.user.id);
+  }
+
   @Get('reservations/calendar')
   getCalendarEvents(@Query('start') start: string, @Query('end') end: string) {
     return this.amenityService.getCalendarEvents(new Date(start), new Date(end));

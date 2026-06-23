@@ -97,7 +97,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         // NestJS validation pipe errors have { message: string[], error: string }
         return {
           status,
-          code: this.statusToCode(status),
+          code: (obj.code as string) || this.statusToCode(status),
           message: Array.isArray(obj.message)
             ? 'Validation failed'
             : (obj.message as string) || exception.message,
