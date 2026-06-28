@@ -13,7 +13,7 @@ import { UserRole } from '@prisma/client';
 
 @ApiTags('Billing & Payments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}

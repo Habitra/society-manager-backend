@@ -8,10 +8,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole, AuditAction } from '@prisma/client';
 import { AuditLog } from '../common/decorators/audit-log.decorator';
+import { AuthenticatedOnly } from '../auth/decorators/authenticated-only.decorator';
 
 @ApiTags('Maintenance Categories')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('maintenance/categories')
 export class MaintenanceCategoryController {
   constructor(private readonly categoryService: MaintenanceCategoryService) {}
@@ -25,6 +26,7 @@ export class MaintenanceCategoryController {
     return this.categoryService.createCategory(createCategoryDto);
   }
 
+  @AuthenticatedOnly()
   @Get()
   @ApiOperation({ summary: 'List all maintenance categories' })
   @ApiResponse({ status: 200, description: 'List of categories' })
@@ -32,6 +34,7 @@ export class MaintenanceCategoryController {
     return this.categoryService.getCategories();
   }
 
+  @AuthenticatedOnly()
   @Get(':id')
   @ApiOperation({ summary: 'Get category details' })
   @ApiResponse({ status: 200, description: 'Category details' })

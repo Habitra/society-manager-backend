@@ -10,16 +10,18 @@ import { DashboardOverviewDto } from './dto/dashboard-overview.dto';
 import { MaintenanceDashboardDto } from './dto/maintenance-dashboard.dto';
 import { VisitorDashboardDto } from './dto/visitor-dashboard.dto';
 import { OccupancyDashboardDto } from './dto/occupancy-dashboard.dto';
+import { AuthenticatedOnly } from '../auth/decorators/authenticated-only.decorator';
 
 @ApiTags('Dashboard Analytics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
 @Controller('dashboard')
 @UseInterceptors(CacheInterceptor)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  @AuthenticatedOnly()
   @Get('overview')
   @CacheTTL(300000) // 5 minutes cache
   @ApiOperation({ summary: 'Get overview metrics' })
@@ -28,6 +30,7 @@ export class DashboardController {
     return this.dashboardService.getOverviewMetrics();
   }
 
+  @AuthenticatedOnly()
   @Get('maintenance')
   @CacheTTL(300000)
   @ApiOperation({ summary: 'Get maintenance metrics' })
@@ -36,6 +39,7 @@ export class DashboardController {
     return this.dashboardService.getMaintenanceMetrics();
   }
 
+  @AuthenticatedOnly()
   @Get('visitors')
   @CacheTTL(300000)
   @ApiOperation({ summary: 'Get visitor metrics' })
@@ -44,6 +48,7 @@ export class DashboardController {
     return this.dashboardService.getVisitorMetrics();
   }
 
+  @AuthenticatedOnly()
   @Get('occupancy')
   @CacheTTL(300000)
   @ApiOperation({ summary: 'Get occupancy metrics' })
@@ -52,6 +57,7 @@ export class DashboardController {
     return this.dashboardService.getOccupancyMetrics();
   }
 
+  @AuthenticatedOnly()
   @Get('activity')
   @CacheTTL(60000) // 1 minute cache
   @ApiOperation({ summary: 'Get recent activity timeline' })
@@ -60,6 +66,7 @@ export class DashboardController {
     return this.dashboardService.getRecentActivity();
   }
 
+  @AuthenticatedOnly()
   @Get('recent-tickets')
   @CacheTTL(60000)
   @ApiOperation({ summary: 'Get recent maintenance tickets' })

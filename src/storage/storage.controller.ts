@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, UseGuards } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
@@ -5,14 +6,16 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { StorageService } from './storage.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuthenticatedOnly } from '../auth/decorators/authenticated-only.decorator';
 
 @ApiTags('Storage')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+
 @Controller('storage')
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}
 
+  @AuthenticatedOnly()
   @Post('upload')
   @ApiOperation({ summary: 'Upload a file (max 10MB)' })
   @ApiConsumes('multipart/form-data')
@@ -31,10 +34,9 @@ export class StorageController {
     storage: diskStorage({
       destination: './uploads',
       filename: (req, file, cb) => {
-        // Generate unique name
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        // Use a UUID as the filename — crypto.randomUUID() is CSPRNG-backed
         const ext = extname(file.originalname);
-        cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+        cb(null, `${randomUUID()}${ext}`);
       }
     }),
     limits: {

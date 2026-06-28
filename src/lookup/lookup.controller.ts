@@ -8,7 +8,7 @@ import { UserRole, StaffCategory } from '@prisma/client';
 
 @ApiTags('Lookups')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('lookups')
 export class LookupController {
   constructor(private readonly lookupService: LookupService) {}

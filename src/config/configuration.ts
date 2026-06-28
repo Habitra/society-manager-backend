@@ -5,22 +5,52 @@
 // All env variables are validated by Joi before the app boots.
 // ============================================================
 
+/**
+ * Reads a required environment variable and throws immediately at module
+ * load time if it is absent or shorter than minLength characters.
+ *
+ * This is the second layer of security after Joi validation — Joi catches
+ * missing vars at NestJS bootstrap, but requireEnv() catches them at the
+ * moment this module is first imported, before any DI container is built.
+ *
+ * Never supply a default value for secrets — silence is better than a
+ * predictable fallback that could accidentally reach production.
+ */
+function requireEnv(key: string, minLength = 1): string {
+  const value = process.env[key];
+  if (!value || value.trim().length === 0) {
+    throw new Error(
+      `[SECURITY] Required environment variable "${key}" is missing or empty. ` +
+      `Generate a value with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
+    );
+  }
+  if (value.length < minLength) {
+    throw new Error(
+      `[SECURITY] Environment variable "${key}" is too short (${value.length} chars). ` +
+      `Minimum required length is ${minLength} characters.`,
+    );
+  }
+  return value;
+}
+
 export const configuration = () => ({
   app: {
     nodeEnv: process.env.NODE_ENV ?? 'development',
     port: parseInt(process.env.PORT ?? '3000', 10),
     apiPrefix: process.env.API_PREFIX ?? 'api/v1',
     isProduction: process.env.NODE_ENV === 'production',
-    swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
+    swaggerEnabled: process.env.SWAGGER_ENABLED === 'true',
     corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
       .split(',')
       .map((o) => o.trim()),
   },
 
   auth: {
-    jwtSecret: process.env.JWT_SECRET ?? 'super-secret-default',
-    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? 'super-secret-refresh-default',
-    jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '1h',
+    // requireEnv() throws at module load if secret is missing or < 32 chars.
+    // Never add a fallback default here — a missing secret must crash the app.
+    jwtSecret: requireEnv('JWT_SECRET', 32),
+    jwtRefreshSecret: requireEnv('JWT_REFRESH_SECRET', 32),
+    jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
     bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS ?? '10', 10),
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS ?? '5', 10),
@@ -28,9 +58,9 @@ export const configuration = () => ({
   },
 
   supabase: {
-    url: process.env.SUPABASE_URL!,
-    anonKey: process.env.SUPABASE_ANON_KEY!,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    url: process.env.SUPABASE_URL,
+    anonKey: process.env.SUPABASE_ANON_KEY,
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   },
 
   database: {

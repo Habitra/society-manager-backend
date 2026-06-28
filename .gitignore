@@ -9,6 +9,12 @@ build/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+
+# Keys and Certificates
+*.pem
+*.key
 
 # Prisma
 prisma/.env

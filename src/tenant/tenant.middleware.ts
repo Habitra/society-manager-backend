@@ -24,32 +24,9 @@ export class TenantMiddleware implements NestMiddleware {
   constructor(private readonly tenantContext: TenantContextService) {}
 
   use(req: Request & { user?: RequestUser }, _res: Response, next: NextFunction): void {
-    // If req.user is already populated, use it.
-    if (req.user) {
-      const { communityId, id: userId } = req.user;
-      if (communityId) {
-        this.tenantContext.communityId = communityId;
-        this.tenantContext.userId = userId;
-      }
-      return next();
-    }
-
-    // Otherwise, decode the JWT manually since Guards run AFTER Middlewares in NestJS
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        const payloadStr = Buffer.from(token.split('.')[1], 'base64').toString();
-        const payload = JSON.parse(payloadStr);
-        if (payload.communityId) {
-          this.tenantContext.communityId = payload.communityId;
-          this.tenantContext.userId = payload.sub;
-        }
-      } catch (err) {
-        // Ignore decode errors; let AuthGuard handle invalid tokens
-      }
-    }
-
+    // Tenant context is now securely set in JwtAuthGuard.handleRequest()
+    // This middleware is kept as a pass-through to avoid breaking imports 
+    // and to reserve the injection point for future request-level middleware.
     next();
   }
 }

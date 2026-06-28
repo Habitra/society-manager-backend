@@ -8,9 +8,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { AuthenticatedOnly } from '../auth/decorators/authenticated-only.decorator';
 
 @Controller('amenities')
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 export class AmenityController {
   constructor(private readonly amenityService: AmenityService) {}
 
@@ -20,26 +21,31 @@ export class AmenityController {
     return this.amenityService.createAmenity(createAmenityDto, req.user.id);
   }
 
+  @AuthenticatedOnly()
   @Get()
   findAll() {
     return this.amenityService.getAmenities();
   }
 
+  @AuthenticatedOnly()
   @Get('reservations')
   findAllReservations() {
     return this.amenityService.getReservations();
   }
 
+  @AuthenticatedOnly()
   @Get('reservations/my')
   findMyReservations(@Req() req: any) {
     return this.amenityService.getMyReservations(req.user.id);
   }
 
+  @AuthenticatedOnly()
   @Get('reservations/calendar')
   getCalendarEvents(@Query('start') start: string, @Query('end') end: string) {
     return this.amenityService.getCalendarEvents(new Date(start), new Date(end));
   }
 
+  @AuthenticatedOnly()
   @Post('reservations')
   createReservation(@Body() createReservationDto: CreateReservationDto, @Req() req: any) {
     return this.amenityService.createReservation(createReservationDto, req.user.id, req.user.id);
@@ -51,11 +57,13 @@ export class AmenityController {
     return this.amenityService.updateReservation(id, updateReservationDto, req.user.id);
   }
 
+  @AuthenticatedOnly()
   @Delete('reservations/:id')
   deleteReservation(@Param('id') id: string, @Req() req: any) {
     return this.amenityService.deleteReservation(id, req.user.id);
   }
 
+  @AuthenticatedOnly()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.amenityService.getAmenityById(id);

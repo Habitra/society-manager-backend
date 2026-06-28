@@ -71,9 +71,10 @@ describe('ResidentService', () => {
         }
       });
 
-      const dto = {
-        firstName: 'John', lastName: 'Doe', phone: '1234567890',
+      const dto: any = {
+        fullName: 'John Doe', phone: '1234567890',
         email: 'test@example.com', unitId: 'unit-1', occupancyType: OccupancyType.TENANT,
+        emergencyContactName: 'Jane Doe', emergencyContactNumber: '0987654321', emergencyContactRelation: 'Spouse',
       };
 
       const result = await service.createResident(dto, 'admin-1');
@@ -127,7 +128,7 @@ describe('ResidentService', () => {
       residentRepository.emailExists.mockResolvedValue(false);
       residentRepository.update.mockResolvedValue({} as any);
 
-      await service.updateResident('u1', { email: 'new@example.com', firstName: 'New', lastName: 'Name' }, 'admin');
+      await service.updateResident('u1', { email: 'new@example.com', fullName: 'New Name' }, 'admin');
 
       expect(residentRepository.update).toHaveBeenCalledWith('u1', expect.objectContaining({
         email: 'new@example.com',
@@ -165,7 +166,7 @@ describe('ResidentService', () => {
         }
       });
 
-      const result = await service.addFamilyMember('u1', { firstName: 'Fam', lastName: 'Member', phone: '0987654321', unitId: 'unit-1' }, 'admin');
+      const result = await service.addFamilyMember('u1', { fullName: 'Fam Member', phone: '0987654321', unitId: 'unit-1' } as any, 'admin');
       
       expect(result.credentials.username).toBe('TEST-FAM-000001');
       expect(auditService.write).toHaveBeenCalled();

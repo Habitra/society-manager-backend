@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
@@ -46,7 +47,7 @@ export class StaffService {
       if (existingEmail) throw new ConflictException('Email already in use');
     }
 
-    const tempPassword = Math.random().toString(36).slice(-8);
+    const tempPassword = randomBytes(8).toString('hex'); // 16-char hex — crypto.randomBytes is CSPRNG-backed
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
     // Generate Username (STF-000001)

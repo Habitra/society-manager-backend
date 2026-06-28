@@ -10,7 +10,7 @@ import { AuditLog } from '../common/decorators/audit-log.decorator';
 
 @ApiTags('Maintenance Comments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('maintenance')
 export class MaintenanceCommentController {
   constructor(private readonly commentService: MaintenanceCommentService) {}

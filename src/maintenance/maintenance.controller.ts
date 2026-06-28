@@ -12,10 +12,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole, AuditAction } from '@prisma/client';
 import { AuditLog } from '../common/decorators/audit-log.decorator';
 import { TenantContextService } from '../tenant/tenant-context.service';
+import { AuthenticatedOnly } from '../auth/decorators/authenticated-only.decorator';
 
 @ApiTags('Maintenance Tickets')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('maintenance')
 export class MaintenanceController {
   constructor(
@@ -48,6 +49,7 @@ export class MaintenanceController {
     return this.maintenanceService.listTickets(listTicketsDto);
   }
 
+  @AuthenticatedOnly()
   @Get('tickets/:id')
   @ApiOperation({ summary: 'Get ticket details by ID' })
   @ApiResponse({ status: 200, description: 'Ticket details', type: TicketResponseDto })
@@ -82,6 +84,7 @@ export class MaintenanceController {
     return this.maintenanceService.assignTicket(id, assignTicketDto);
   }
 
+  @AuthenticatedOnly()
   @Get('tickets/:id/timeline')
   @ApiOperation({ summary: 'Get the full timeline of events for a ticket' })
   @ApiResponse({ status: 200, description: 'List of chronological events' })

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -10,6 +11,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { AppConfig } from '../config/configuration';
+import { TenantModule } from '../tenant/tenant.module';
 
 @Module({
   imports: [
@@ -25,6 +27,7 @@ import { AppConfig } from '../config/configuration';
         };
       },
     }),
+    TenantModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -34,6 +37,14 @@ import { AppConfig } from '../config/configuration';
     JwtRefreshStrategy,
     JwtAuthGuard,
     RolesGuard,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
   exports: [JwtAuthGuard, RolesGuard, AuthService],
 })

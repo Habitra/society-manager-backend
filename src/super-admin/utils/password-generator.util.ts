@@ -1,26 +1,39 @@
+import { randomBytes, randomInt } from 'crypto';
+
+/**
+ * Generates a cryptographically secure temporary password.
+ *
+ * Uses crypto.randomInt() for character selection (CSPRNG-backed) and
+ * Fisher-Yates shuffle with crypto.randomBytes() for uniform permutation.
+ *
+ * Output: 12-character string guaranteed to contain at least one uppercase,
+ * one lowercase, one digit, and one special character.
+ */
 export function generateTemporaryPassword(): string {
-  const length = 12;
   const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const lowercase = 'abcdefghijklmnopqrstuvwxyz';
   const numbers = '0123456789';
   const symbols = '!@#$%^&*()_+-=[]{}|;:,.<>?';
-
-  // Ensure at least one of each required character type
-  let password = '';
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += symbols[Math.floor(Math.random() * symbols.length)];
-
-  // Fill the rest with random characters from all sets
   const allChars = uppercase + lowercase + numbers + symbols;
-  for (let i = password.length; i < length; i++) {
-    password += allChars[Math.floor(Math.random() * allChars.length)];
+
+  // Guarantee at least one character from each required class
+  const chars: string[] = [
+    uppercase[randomInt(uppercase.length)],
+    lowercase[randomInt(lowercase.length)],
+    numbers[randomInt(numbers.length)],
+    symbols[randomInt(symbols.length)],
+  ];
+
+  // Fill remaining positions to reach length 12
+  while (chars.length < 12) {
+    chars.push(allChars[randomInt(allChars.length)]);
   }
 
-  // Shuffle the password to avoid predictable patterns
-  return password
-    .split('')
-    .sort(() => 0.5 - Math.random())
-    .join('');
+  // Fisher-Yates shuffle using crypto.randomBytes() for uniform permutation
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomBytes(1)[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+
+  return chars.join('');
 }

@@ -29,12 +29,12 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { AuditModule } from './audit/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { TenantInterceptor } from './tenant/tenant.interceptor';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { configuration } from './config/configuration';
 import { validationSchema } from './config/validation.schema';
 import { PrismaModule } from './prisma/prisma.module';
-import { SupabaseModule } from './supabase/supabase.module';
 import { TenantMiddleware } from './tenant/tenant.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommunityModule } from './community/community.module';
@@ -92,7 +92,6 @@ import { join } from 'path';
 
     // ─── Infrastructure (global) ──────────────────────────────────────────
     PrismaModule,
-    SupabaseModule,
     AuditModule,
 
     // ─── Auth ─────────────────────────────────────────────────────────────
@@ -138,20 +137,11 @@ import { join } from 'path';
       useClass: ThrottlerGuard,
     },
 
-    // ─── Global Auth Guard (default: all routes require auth) ─────────────
-    // Use @Public() to opt routes out.
-    {
-      provide: APP_GUARD,
-      useClass: JwtAuthGuard,
-    },
 
-    // ─── Global Roles Guard ───────────────────────────────────────────────
-    // Use @Roles(...) to restrict routes to specific roles.
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantInterceptor,
     },
-
     // ─── Global Exception Filter ──────────────────────────────────────────
     {
       provide: APP_FILTER,

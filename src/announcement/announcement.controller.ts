@@ -9,10 +9,11 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
+import { AuthenticatedOnly } from '../auth/decorators/authenticated-only.decorator';
 
 @ApiTags('Announcements')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('announcements')
 export class AnnouncementController {
   constructor(private readonly announcementService: AnnouncementService) {}
@@ -28,6 +29,7 @@ export class AnnouncementController {
     );
   }
 
+  @AuthenticatedOnly()
   @Get('my')
   @ApiOperation({ summary: 'Get tailored announcement feed for the current user' })
   findMyFeed(@Req() req: any) {
@@ -45,6 +47,7 @@ export class AnnouncementController {
     return this.announcementService.findAll(req.user.communityId);
   }
 
+  @AuthenticatedOnly()
   @Get(':id')
   @ApiOperation({ summary: 'Get an announcement by id' })
   findOne(@Req() req: any, @Param('id') id: string) {
@@ -72,6 +75,7 @@ export class AnnouncementController {
     return this.announcementService.archive(req.user.communityId, id);
   }
 
+  @AuthenticatedOnly()
   @Post(':id/read')
   @ApiOperation({ summary: 'Mark an announcement as read' })
   markAsRead(@Req() req: any, @Param('id') id: string) {

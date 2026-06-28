@@ -1,6 +1,9 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { randomInt } from 'crypto';
+import { ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../config/configuration';
@@ -10,6 +13,8 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   private bcryptSaltRounds: number;
   private maxLoginAttempts: number;
   private lockoutDurationMinutes: number;
@@ -18,6 +23,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService<AppConfig, true>,
+    private auditService: AuditService,
   ) {
     const authConfig = this.configService.get('auth', { infer: true });
     this.bcryptSaltRounds = authConfig.bcryptSaltRounds;
@@ -73,6 +79,23 @@ export class AuthService {
     }
 
     return this.generateTokenPair(user);
+  }
+
+  async logout(userId: string, communityId?: string): Promise<{ success: boolean }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null },
+    });
+
+    await this.auditService.write({
+      communityId: communityId ?? null,
+      actorId: userId,
+      action: AuditAction.LOGOUT,
+      tableName: 'users',
+      recordId: userId,
+    });
+
+    return { success: true };
   }
 
   async generateTokenPair(user: Partial<RequestUser>) {
@@ -151,7 +174,7 @@ export class AuthService {
       return { success: true, message: 'If the phone number exists, an OTP will be sent.' };
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+    const otp = randomInt(100000, 1000000).toString(); // 6 digit OTP — crypto.randomInt is CSPRNG-backed
     const otpHash = await bcrypt.hash(otp, this.bcryptSaltRounds);
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 10);
@@ -166,7 +189,8 @@ export class AuthService {
     });
 
     // TODO: Integrate SMS provider here
-    console.log(`[DEVELOPMENT ONLY] OTP for ${phone} is ${otp}`);
+    // OTP value is intentionally NOT logged. Retrieve from DB (password_reset_otps) for local testing.
+    this.logger.debug(`Password reset OTP created for phone ending ...${phone.slice(-4)}`);
 
     return { success: true, message: 'If the phone number exists, an OTP will be sent.' };
   }

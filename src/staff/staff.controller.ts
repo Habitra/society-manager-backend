@@ -11,7 +11,7 @@ import { UserRole } from '@prisma/client';
 
 @ApiTags('Staff & Guard Management')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('staff')
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}

@@ -10,7 +10,7 @@ export class GatePassService {
   constructor(private readonly gatePassRepository: GatePassRepository) {}
 
   async generatePass(visitorRequestId: string, expiresAt: Date): Promise<GatePassResponseDto> {
-    const passCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const passCode = randomBytes(3).toString('hex').toUpperCase(); // 6-char uppercase hex \u2014 CSPRNG-backed
     const qrToken = randomBytes(32).toString('hex');
 
     const pass = await this.gatePassRepository.create({

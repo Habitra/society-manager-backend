@@ -2,6 +2,8 @@
 // ============================================================
 // Joi schema for environment variable validation.
 // Validated before the app boots — fails fast on misconfiguration.
+// This is the FIRST validation layer. requireEnv() in configuration.ts
+// is the SECOND layer (runs at module load time).
 // ============================================================
 
 import * as Joi from 'joi';
@@ -11,14 +13,21 @@ export const validationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
   PORT: Joi.number().default(3000),
   API_PREFIX: Joi.string().default('api/v1'),
-  SWAGGER_ENABLED: Joi.string().valid('true', 'false').default('true'),
+  SWAGGER_ENABLED: Joi.string().valid('true', 'false').default('false'),
   CORS_ORIGINS: Joi.string().default('http://localhost:3001'),
 
-  // Supabase — all required
-  SUPABASE_URL: Joi.string().uri().required(),
-  SUPABASE_ANON_KEY: Joi.string().required(),
-  SUPABASE_SERVICE_ROLE_KEY: Joi.string().required(),
-  SUPABASE_JWT_SECRET: Joi.string().required(),
+  // JWT — required, minimum 32 characters for cryptographic strength
+  // Generate values with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  JWT_SECRET: Joi.string().min(32).required(),
+  JWT_REFRESH_SECRET: Joi.string().min(32).required(),
+  JWT_EXPIRES_IN: Joi.string().default('15m'),
+  JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+
+  // Supabase — optional (deprecated in favor of local JWT auth)
+  SUPABASE_URL: Joi.string().uri().optional(),
+  SUPABASE_ANON_KEY: Joi.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: Joi.string().optional(),
+  SUPABASE_JWT_SECRET: Joi.string().optional(),
 
   // Database
   DATABASE_URL: Joi.string().required(),

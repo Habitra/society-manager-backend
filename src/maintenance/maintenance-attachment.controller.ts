@@ -10,7 +10,7 @@ import { AuditLog } from '../common/decorators/audit-log.decorator';
 
 @ApiTags('Maintenance Attachments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+
 @Controller('maintenance/tickets/:id/attachments')
 export class MaintenanceAttachmentController {
   constructor(private readonly attachmentService: MaintenanceAttachmentService) {}

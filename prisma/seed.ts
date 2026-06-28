@@ -4,6 +4,11 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('SECURITY: Prisma seeding is disabled in production to protect data integrity.');
+    process.exit(0);
+  }
+
   console.log('Starting seed...');
 
   // 1. Community

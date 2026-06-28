@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes, randomInt } from 'crypto';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { AuditService } from '../audit/audit.service';
@@ -16,6 +17,8 @@ import { toPrismaPage, toPaginatedResult } from '../common/utils/pagination.util
 
 @Injectable()
 export class ResidentService {
+  private readonly logger = new Logger(ResidentService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
@@ -23,25 +26,43 @@ export class ResidentService {
     private readonly residentRepository: ResidentRepository,
   ) {}
 
+  /**
+   * Generates a cryptographically secure temporary password.
+   *
+   * Uses crypto.randomBytes() for character selection, ensuring uniform distribution
+   * backed by the OS CSPRNG. Shuffles with a Fisher-Yates algorithm (also CSPRNG-backed)
+   * to prevent any positional bias.
+   *
+   * Output: 12-character string guaranteed to contain at least one uppercase,
+   * one lowercase, one digit, and one special character.
+   */
   private generateTemporaryPassword(): string {
     const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const lowercase = 'abcdefghijklmnopqrstuvwxyz';
     const numbers = '0123456789';
     const special = '!@#$%^&*';
-    
-    let password = '';
-    password += uppercase[Math.floor(Math.random() * uppercase.length)];
-    password += lowercase[Math.floor(Math.random() * lowercase.length)];
-    password += numbers[Math.floor(Math.random() * numbers.length)];
-    password += special[Math.floor(Math.random() * special.length)];
-    
     const allChars = uppercase + lowercase + numbers + special;
-    for (let i = password.length; i < 10; i++) {
-      password += allChars[Math.floor(Math.random() * allChars.length)];
+
+    // Guarantee at least one character from each required class
+    const chars: string[] = [
+      uppercase[randomInt(uppercase.length)],
+      lowercase[randomInt(lowercase.length)],
+      numbers[randomInt(numbers.length)],
+      special[randomInt(special.length)],
+    ];
+
+    // Fill remaining positions to reach length 12
+    while (chars.length < 12) {
+      chars.push(allChars[randomInt(allChars.length)]);
     }
-    
-    // Shuffle the password
-    return password.split('').sort(() => 0.5 - Math.random()).join('');
+
+    // Fisher-Yates shuffle using crypto.randomBytes() for index selection
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = randomBytes(1)[0] % (i + 1);
+      [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+
+    return chars.join('');
   }
 
   private mapResidentToDto(user: ResidentWithRelations): ResidentResponseDto {
@@ -203,24 +224,13 @@ export class ResidentService {
     };
   }
 
+  /**
+   * @deprecated Alias for generateTemporaryPassword().
+   * Kept to avoid renaming 3 call sites in this release.
+   * All callers will be migrated to generateTemporaryPassword() in a future cleanup.
+   */
   private generateSecureTemporaryPassword(): string {
-    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-    const numbers = '0123456789';
-    const special = '!@#$%^&*()_+-=[]{}|;:,.<>?';
-    
-    let password = '';
-    password += uppercase[Math.floor(Math.random() * uppercase.length)];
-    password += lowercase[Math.floor(Math.random() * lowercase.length)];
-    password += numbers[Math.floor(Math.random() * numbers.length)];
-    password += special[Math.floor(Math.random() * special.length)];
-    
-    const allChars = uppercase + lowercase + numbers + special;
-    while (password.length < 12) {
-      password += allChars[Math.floor(Math.random() * allChars.length)];
-    }
-    
-    return password.split('').sort(() => 0.5 - Math.random()).join('');
+    return this.generateTemporaryPassword();
   }
 
   async resetPassword(id: string, actorId: string): Promise<{ temporaryPassword: string }> {
@@ -601,7 +611,7 @@ export class ResidentService {
     if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
 
     // Reusing PasswordResetOtp as instructed
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = randomInt(100000, 1000000).toString(); // crypto.randomInt is CSPRNG-backed
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
@@ -623,7 +633,8 @@ export class ResidentService {
     });
 
     // In a real system, send SMS here. For now, we simulate it.
-    console.log(`[ONBOARDING OTP] Sent ${otp} to ${user.phone}`);
+    // OTP value is intentionally NOT logged. Retrieve from DB (password_reset_otps) for local testing.
+    this.logger.debug(`Onboarding OTP created for resident userId=${user.id}`);
     return { success: true, message: 'OTP Sent successfully' };
   }
 

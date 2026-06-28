@@ -13,12 +13,13 @@
 
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma/prisma.service';
 import { AppConfig } from './config/configuration';
+
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -62,7 +63,7 @@ async function bootstrap() {
     }),
   );
 
-  // ─── Swagger / OpenAPI ─────────────────────────────────────────────────
+  // ─── Swagger / OpenAPI ────────────────────────────────────────────────────
   if (appConfig.swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Society Manager API')
@@ -95,10 +96,7 @@ All responses follow the standard envelope:
       `,
       )
       .setVersion('1.0.0')
-      .addBearerAuth(
-        { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' },
-        'Supabase JWT',
-      )
+      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' })
       .addTag('Health', 'Health check and API info')
       .addTag('Auth', 'Authentication and session management')
       .addTag('Community', 'Community management (admin only)')
@@ -130,6 +128,19 @@ All responses follow the standard envelope:
   // ─── Prisma Graceful Shutdown ──────────────────────────────────────────
   const prismaService = app.get(PrismaService);
   prismaService.enableShutdownHooks(app);
+
+  // ─── Production Startup Guard ─────────────────────────────────────────
+  // Double-check that critical secrets are not placeholder values.
+  // requireEnv() in configuration.ts already handles missing vars;
+  // this guard catches cases where vars are set but contain dummy values.
+  if (appConfig.isProduction) {
+    const jwtSecret = configService.get('auth.jwtSecret', { infer: true });
+    const jwtRefreshSecret = configService.get('auth.jwtRefreshSecret', { infer: true });
+    if (!jwtSecret || jwtSecret.length < 32 || !jwtRefreshSecret || jwtRefreshSecret.length < 32) {
+      console.error('[SECURITY] JWT secrets do not meet minimum length requirements. Refusing to start in production.');
+      process.exit(1);
+    }
+  }
 
   // ─── Start Server ──────────────────────────────────────────────────────
   await app.listen(appConfig.port);
