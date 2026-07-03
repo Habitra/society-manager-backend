@@ -27,7 +27,10 @@ export class ResidentResponseDto {
   @ApiProperty() role!: string;
   @ApiProperty({ enum: UserStatus }) status!: UserStatus;
   @ApiProperty() firstLoginCompleted!: boolean;
+  @ApiProperty() mustChangePassword!: boolean;
   @ApiPropertyOptional() lastLoginAt?: Date | null;
+  @ApiPropertyOptional() lockedUntil?: Date | null;
+  @ApiProperty() failedLoginAttempts!: number;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 

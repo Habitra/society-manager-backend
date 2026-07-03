@@ -171,27 +171,41 @@ export class MaintenanceService {
     const ticket = await this.maintenanceRepository.findById(id) as any;
     const adminId = this.tenantContext.userId;
 
-    const staffProfile = await this.prisma.staffProfile.findFirst({
-      where: {
-        userId: dto.staffId,
-        communityId: this.tenantContext.communityId,
-        user: { status: 'ACTIVE' },
-        deletedAt: null,
-      },
-    });
-
-    if (!staffProfile) {
-      throw new BadRequestException('Invalid or inactive staff member');
+    if (!dto.staffId && !dto.vendorId) {
+      throw new BadRequestException('Either staffId or vendorId must be provided.');
+    }
+    if (dto.staffId && dto.vendorId) {
+      throw new BadRequestException('Assign to either staff or vendor, not both simultaneously.');
     }
 
-    const isReassignment = !!ticket.assignedToId;
     const assignedAt = new Date();
+    let updateData: any = { assignedAt, metadata: { ...(ticket.metadata || {}) } };
 
-    const updatedTicket = await this.maintenanceRepository.update(id, {
-      assignedToId: dto.staffId,
-      assignedById: adminId,
-      assignedAt,
-    }) as any;
+    if (dto.staffId) {
+      const staffProfile = await this.prisma.staffProfile.findFirst({
+        where: {
+          userId: dto.staffId,
+          communityId: this.tenantContext.communityId,
+          user: { status: 'ACTIVE' },
+          deletedAt: null,
+        },
+      });
+      if (!staffProfile) throw new BadRequestException('Invalid or inactive staff member.');
+      updateData.assignedToId = dto.staffId;
+      updateData.metadata.assignedVendorId = null;
+      updateData.metadata.assignedVendorName = null;
+    } else {
+      const vendor = await this.prisma.vendor.findFirst({
+        where: { id: dto.vendorId, communityId: this.tenantContext.communityId, deletedAt: null, status: 'ACTIVE' },
+      });
+      if (!vendor) throw new BadRequestException('Invalid or inactive vendor.');
+      // Store vendor in metadata since the schema uses WorkOrder for vendor-ticket linkage
+      updateData.assignedToId = null;
+      updateData.metadata.assignedVendorId = vendor.id;
+      updateData.metadata.assignedVendorName = vendor.name;
+    }
+
+    const updatedTicket = await this.maintenanceRepository.update(id, updateData) as any;
 
     await this.auditService.write({
       action: AuditAction.UPDATE,
@@ -199,13 +213,14 @@ export class MaintenanceService {
       recordId: id,
       actorId: adminId,
       communityId: this.tenantContext.communityId,
-      newValues: { assignedToId: dto.staffId, assignedById: adminId, assignedAt },
-      metadata: { event: isReassignment ? 'REASSIGNMENT' : 'ASSIGNMENT' },
+      newValues: { assignedToId: dto.staffId || null, vendorId: dto.vendorId || null, assignedAt },
+      metadata: { event: ticket.assignedToId || (ticket.metadata as any)?.assignedVendorId ? 'REASSIGNMENT' : 'ASSIGNMENT' },
     });
 
     return {
       ticketId: updatedTicket.id,
-      assignedStaff: dto.staffId,
+      assignedStaff: dto.staffId || null,
+      assignedVendor: dto.vendorId || null,
       assignedAt,
     };
   }
@@ -256,6 +271,76 @@ export class MaintenanceService {
 
     timeline.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
     return timeline;
+  }
+
+  // ==============================================================================
+  // MAINTENANCE OPERATIONS CENTER
+  // ==============================================================================
+
+  async getMaintenanceDashboard() {
+    const communityId = this.tenantContext.communityId;
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+
+    const [openTickets, pendingAssignment, inProgress, overdue, completedToday, highPriority] = await Promise.all([
+      this.prisma.maintenanceTicket.count({ where: { communityId, status: 'OPEN', deletedAt: null } }),
+      this.prisma.maintenanceTicket.count({ where: { communityId, status: 'OPEN', assignedToId: null, deletedAt: null } }),
+      this.prisma.maintenanceTicket.count({ where: { communityId, status: 'IN_PROGRESS', deletedAt: null } }),
+      this.prisma.maintenanceTicket.count({
+        where: {
+          communityId,
+          scheduledAt: { lt: now },
+          status: { notIn: ['RESOLVED', 'CLOSED'] },
+          deletedAt: null,
+        },
+      }),
+      this.prisma.maintenanceTicket.count({
+        where: {
+          communityId,
+          closedAt: { gte: startOfToday, lt: endOfToday },
+          deletedAt: null,
+        },
+      }),
+      this.prisma.maintenanceTicket.count({
+        where: {
+          communityId,
+          priority: { in: ['HIGH', 'URGENT'] },
+          status: { notIn: ['RESOLVED', 'CLOSED'] },
+          deletedAt: null,
+        },
+      }),
+    ]);
+
+    return { openTickets, pendingAssignment, inProgress, overdue, completedToday, highPriority };
+  }
+
+  async escalateTicket(id: string, dto: { priority?: string; staffId?: string; vendorId?: string }) {
+    const ticket = await this.maintenanceRepository.findById(id) as any;
+    if (!ticket) throw new BadRequestException('Ticket not found.');
+
+    const updateData: any = {};
+    if (dto.priority) updateData.priority = dto.priority;
+
+    if (dto.staffId) {
+      const staffProfile = await this.prisma.staffProfile.findFirst({
+        where: { userId: dto.staffId, communityId: this.tenantContext.communityId, deletedAt: null },
+      });
+      if (!staffProfile) throw new BadRequestException('Invalid staff member.');
+      updateData.assignedToId = dto.staffId;
+      updateData.metadata = { ...(ticket.metadata || {}), assignedVendorId: null, assignedVendorName: null };
+    } else if (dto.vendorId) {
+      const vendor = await this.prisma.vendor.findFirst({
+        where: { id: dto.vendorId, communityId: this.tenantContext.communityId, deletedAt: null },
+      });
+      if (!vendor) throw new BadRequestException('Invalid vendor.');
+      updateData.assignedToId = null;
+      updateData.metadata = { ...(ticket.metadata || {}), assignedVendorId: vendor.id, assignedVendorName: vendor.name };
+    }
+
+    // Status is intentionally NOT modified during escalation
+    const updatedTicket = await this.maintenanceRepository.update(id, updateData) as any;
+    return { ...updatedTicket, snapshot: updatedTicket.metadata };
   }
 
   // Dashboard Support Services

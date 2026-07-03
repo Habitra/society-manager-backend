@@ -10,6 +10,7 @@ import { CreateResidentDto } from './dto/create-resident.dto';
 import { ListResidentsDto } from './dto/list-residents.dto';
 import { AssignedUnitDto, ResidentCredentialsResponseDto, ResidentResponseDto } from './dto/resident-response.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { UpdateResidentAccessDto } from './dto/update-resident-access.dto';
 import { AddFamilyMemberDto } from './dto/add-family-member.dto';
 import { ReassignUnitDto } from './dto/reassign-unit.dto';
 import { ApiPaginatedResponse } from '../common/decorators/api-paginated-response.decorator';
@@ -45,6 +46,43 @@ export class ResidentController {
   async getDashboardMetrics(): Promise<any> {
     return this.residentService.getDashboardMetrics();
   }
+
+  // ===========================================================================
+  // TENANT VERIFICATION CENTER
+  // ===========================================================================
+
+  @Get('tenant-verifications/metrics')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get KPI metrics for Tenant Verification Center' })
+  async getTenantVerificationMetrics(): Promise<any> {
+    return this.residentService.getTenantVerificationMetrics();
+  }
+
+  @Get('tenant-verifications')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'List residents in tenant verification workflow' })
+  @ApiPaginatedResponse(ResidentResponseDto)
+  async listTenantVerifications(@Query() dto: ListResidentsDto): Promise<PaginatedResult<ResidentResponseDto>> {
+    if (dto.verificationStage === 'APPROVED' || dto.verificationStage === 'REJECTED') {
+      return this.residentService.getTenantVerificationHistory(dto);
+    }
+    return this.residentService.getTenantVerificationQueue(dto);
+  }
+
+  @Patch('tenant-verifications/:id/review')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Review and update verification stage for a resident' })
+  async reviewTenantVerification(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('action') action: 'APPROVED' | 'REJECTED' | 'UNDER_REVIEW',
+    @CurrentUser() user: RequestUser,
+  ): Promise<ResidentResponseDto> {
+    return this.residentService.updateVerificationStage(id, action, user.id);
+  }
+
+  // ===========================================================================
+  // RESIDENT MANAGEMENT
+  // ===========================================================================
 
   @Get(':id')
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER, UserRole.RESIDENT)
@@ -208,6 +246,17 @@ export class ResidentController {
     return this.residentService.getOccupancy();
   }
 
+  @Patch('occupancy/:unitId/primary-resident')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Change the primary resident of a unit' })
+  async setPrimaryResident(
+    @Param('unitId', ParseUUIDPipe) unitId: string,
+    @Body('userId') userId: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<{ success: boolean }> {
+    return this.residentService.setPrimaryResident(unitId, userId, user.id);
+  }
+
   @Get('vehicles')
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
   @ApiOperation({ summary: 'Get all resident vehicles' })
@@ -215,26 +264,15 @@ export class ResidentController {
     return this.residentService.getVehicles();
   }
 
-  @Patch(':id/suspend')
+  @Patch(':id/access')
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
-  @ApiOperation({ summary: 'Suspend resident access' })
-  async suspendAccess(
+  @ApiOperation({ summary: 'Update resident access control status' })
+  async updateAccess(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('reason') reason: string,
+    @Body() dto: UpdateResidentAccessDto,
     @CurrentUser() user: RequestUser,
   ): Promise<ResidentResponseDto> {
-    return this.residentService.suspendAccess(id, user.id, reason);
-  }
-
-  @Patch(':id/restore')
-  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
-  @ApiOperation({ summary: 'Restore resident access' })
-  async restoreAccess(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body('reason') reason: string,
-    @CurrentUser() user: RequestUser,
-  ): Promise<ResidentResponseDto> {
-    return this.residentService.restoreAccess(id, user.id, reason);
+    return this.residentService.updateAccess(id, dto, user.id);
   }
 
   @Post('handover')

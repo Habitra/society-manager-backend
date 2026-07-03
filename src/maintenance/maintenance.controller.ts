@@ -24,6 +24,13 @@ export class MaintenanceController {
     private readonly tenantContext: TenantContextService,
   ) {}
 
+  @Get('dashboard')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Get KPI dashboard metrics for Maintenance Operations Center' })
+  async getMaintenanceDashboard() {
+    return this.maintenanceService.getMaintenanceDashboard();
+  }
+
   @Post('tickets')
   @Roles(UserRole.RESIDENT, UserRole.FAMILY_MEMBER)
   @AuditLog({ table: 'maintenance_tickets', action: AuditAction.CREATE, captureBody: true })
@@ -78,10 +85,18 @@ export class MaintenanceController {
 
   @Patch('tickets/:id/assign')
   @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
-  @ApiOperation({ summary: 'Assign staff to a ticket (Admins only)' })
+  @ApiOperation({ summary: 'Assign staff or vendor to a ticket (Admins only)' })
   @ApiResponse({ status: 200, description: 'Ticket assigned successfully' })
   async assignTicket(@Param('id') id: string, @Body() assignTicketDto: AssignTicketDto) {
     return this.maintenanceService.assignTicket(id, assignTicketDto);
+  }
+
+  @Patch('tickets/:id/escalate')
+  @Roles(UserRole.COMMUNITY_ADMIN, UserRole.MANAGER)
+  @ApiOperation({ summary: 'Escalate a ticket — update priority and/or reassign (Admins only)' })
+  @ApiResponse({ status: 200, description: 'Ticket escalated successfully' })
+  async escalateTicket(@Param('id') id: string, @Body() dto: { priority?: string; staffId?: string; vendorId?: string }) {
+    return this.maintenanceService.escalateTicket(id, dto);
   }
 
   @AuthenticatedOnly()

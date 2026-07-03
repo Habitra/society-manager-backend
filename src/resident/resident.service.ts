@@ -8,9 +8,10 @@ import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { AddFamilyMemberDto } from './dto/add-family-member.dto';
 import { ReassignUnitDto } from './dto/reassign-unit.dto';
+import { UpdateResidentAccessDto, AccessAction } from './dto/update-resident-access.dto';
 import { ListResidentsDto } from './dto/list-residents.dto';
 import { ResidentCredentialsResponseDto, ResidentResponseDto } from './dto/resident-response.dto';
-import { AuditAction, OccupancyType, Prisma, UserRole, UserStatus } from '@prisma/client';
+import { AuditAction, OccupancyType, Prisma, UserRole, UserStatus, VerificationStage } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PaginatedResult } from '../common/dto/api-response.dto';
 import { toPrismaPage, toPaginatedResult } from '../common/utils/pagination.util';
@@ -75,6 +76,9 @@ export class ResidentService {
       role: user.role,
       status: user.status,
       firstLoginCompleted: user.firstLoginCompleted,
+      mustChangePassword: user.mustChangePassword,
+      lockedUntil: user.lockedUntil,
+      failedLoginAttempts: user.failedLoginAttempts,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -246,6 +250,7 @@ export class ResidentService {
       data: {
         passwordHash,
         mustChangePassword: true,
+        firstLoginCompleted: false,
       },
     });
 
@@ -299,11 +304,13 @@ export class ResidentService {
       };
     }
 
-    if (dto.verificationStage) {
-      where.residentProfile = {
-        verificationStage: dto.verificationStage as any,
-      };
-    }
+      if (dto.verificationStage) {
+        const stages = dto.verificationStage.split(',').map(s => s.trim() as VerificationStage);
+        where.residentProfile = {
+          ...(where.residentProfile as any),
+          verificationStage: { in: stages },
+        };
+      }
 
     const [total, users] = await this.prisma.$transaction([
       this.prisma.user.count({ where }),
@@ -353,15 +360,62 @@ export class ResidentService {
       }
     }
 
-    let displayName = user.displayName;
-    if (dto.fullName) {
-      displayName = dto.fullName.trim();
-    }
+    await this.prisma.$transaction(async (tx) => {
+      let displayName = user.displayName;
+      if (dto.fullName) {
+        displayName = dto.fullName.trim();
+      }
 
-    const updated = await this.residentRepository.update(id, {
-      ...(dto.email ? { email: dto.email } : {}),
-      ...(dto.phone ? { phone: dto.phone } : {}),
-      ...(dto.fullName ? { displayName } : {}),
+      await tx.user.update({
+        where: { id },
+        data: {
+          ...(dto.email ? { email: dto.email } : {}),
+          ...(dto.phone ? { phone: dto.phone } : {}),
+          ...(dto.fullName ? { displayName } : {}),
+          ...(dto.role ? { role: dto.role } : {}),
+        }
+      });
+
+      if (dto.verificationStage && user.residentProfile) {
+        await tx.residentProfile.update({
+          where: { id: user.residentProfile.id },
+          data: { verificationStage: dto.verificationStage }
+        });
+      }
+
+      if (dto.unitId || dto.occupancyType || dto.isPrimary !== undefined) {
+        const existingAssignment = await tx.residentUnitAssignment.findFirst({
+           where: { userId: id, communityId: this.tenantContext.communityId, deletedAt: null },
+           orderBy: { isPrimary: 'desc' }
+        });
+
+        if (existingAssignment) {
+           // Validate if changing to owner and unit already has an owner
+           if (dto.occupancyType && (dto.occupancyType === OccupancyType.OWNER_RESIDENT || dto.occupancyType === OccupancyType.OWNER_NON_RESIDENT)) {
+             const existingOwner = await tx.residentUnitAssignment.findFirst({
+               where: {
+                 communityId: this.tenantContext.communityId,
+                 unitId: dto.unitId || existingAssignment.unitId,
+                 occupancyType: { in: [OccupancyType.OWNER_RESIDENT, OccupancyType.OWNER_NON_RESIDENT] },
+                 deletedAt: null,
+                 id: { not: existingAssignment.id }
+               }
+             });
+             if (existingOwner) {
+               throw new ConflictException(`Unit already has an active owner.`);
+             }
+           }
+
+           await tx.residentUnitAssignment.update({
+             where: { id: existingAssignment.id },
+             data: {
+               ...(dto.unitId ? { unitId: dto.unitId } : {}),
+               ...(dto.occupancyType ? { occupancyType: dto.occupancyType } : {}),
+               ...(dto.isPrimary !== undefined ? { isPrimary: dto.isPrimary } : {}),
+             }
+           });
+        }
+      }
     });
 
     void this.auditService.write({
@@ -369,7 +423,7 @@ export class ResidentService {
       action: AuditAction.UPDATE,
       tableName: 'users',
       recordId: id,
-      newValues: { email: dto.email, phone: dto.phone, displayName },
+      newValues: { event: 'Resident Full Update', dto },
     });
 
     return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
@@ -562,7 +616,8 @@ export class ResidentService {
       vacantUnits,
       pendingVerification,
       recentlyMovedIn,
-      recentlyMovedOut
+      recentlyMovedOut,
+      totalUnits
     ] = await Promise.all([
       this.prisma.user.count({ where: { communityId, role: { in: [UserRole.RESIDENT, UserRole.FAMILY_MEMBER] }, deletedAt: null } }),
       this.prisma.residentUnitAssignment.count({ where: { communityId, occupancyType: { in: [OccupancyType.OWNER_RESIDENT, OccupancyType.OWNER_NON_RESIDENT] }, deletedAt: null, moveOutDate: null } }),
@@ -571,18 +626,55 @@ export class ResidentService {
       this.prisma.unit.count({ where: { communityId, occupancy: 'VACANT', deletedAt: null } }),
       this.prisma.residentProfile.count({ where: { communityId, verificationStage: 'PENDING' } }),
       this.prisma.residentUnitAssignment.count({ where: { communityId, deletedAt: null, moveInDate: { gte: thirtyDaysAgo } } }),
-      this.prisma.residentUnitAssignment.count({ where: { communityId, moveOutDate: { gte: thirtyDaysAgo } } })
+      this.prisma.residentUnitAssignment.count({ where: { communityId, moveOutDate: { gte: thirtyDaysAgo } } }),
+      this.prisma.unit.count({ where: { communityId, deletedAt: null } })
     ]);
+
+    const occupiedUnits = totalUnits - vacantUnits;
 
     return {
       totalResidents,
       owners,
       tenants,
       vacantUnits,
+      occupiedUnits,
       pendingVerification,
       suspendedAccounts,
       recentlyMovedIn,
       recentlyMovedOut
+    };
+  }
+
+  async getTenantVerificationQueue(dto: ListResidentsDto): Promise<PaginatedResult<ResidentResponseDto>> {
+    const queueDto = { ...dto, verificationStage: 'PENDING,UNDER_REVIEW' };
+    return this.listResidents(queueDto);
+  }
+
+  async getTenantVerificationHistory(dto: ListResidentsDto): Promise<PaginatedResult<ResidentResponseDto>> {
+    const historyDto = { ...dto, verificationStage: dto.verificationStage || 'APPROVED,REJECTED' };
+    return this.listResidents(historyDto);
+  }
+
+  async getTenantVerificationMetrics(): Promise<any> {
+    const communityId = this.tenantContext.communityId;
+    
+    const [
+      pendingVerification,
+      underReview,
+      approved,
+      rejected
+    ] = await Promise.all([
+      this.prisma.residentProfile.count({ where: { communityId, verificationStage: 'PENDING' } }),
+      this.prisma.residentProfile.count({ where: { communityId, verificationStage: 'UNDER_REVIEW' } }),
+      this.prisma.residentProfile.count({ where: { communityId, verificationStage: 'APPROVED' } }),
+      this.prisma.residentProfile.count({ where: { communityId, verificationStage: 'REJECTED' } })
+    ]);
+
+    return {
+      pendingVerification,
+      underReview,
+      approved,
+      rejected
     };
   }
 
@@ -675,15 +767,79 @@ export class ResidentService {
   }
 
   async getOccupancy(): Promise<any[]> {
-    const assignments = await this.prisma.residentUnitAssignment.findMany({
+    const units = await this.prisma.unit.findMany({
       where: { communityId: this.tenantContext.communityId, deletedAt: null },
       include: {
-        user: { select: { id: true, displayName: true, phone: true, role: true } },
-        unit: { include: { tower: true } }
+        tower: true,
+        residentAssignments: {
+          where: { deletedAt: null },
+          include: {
+            user: {
+              include: { residentProfile: true }
+            }
+          }
+        }
       },
-      orderBy: { unit: { unitNumber: 'asc' } }
+      orderBy: { unitNumber: 'asc' }
     });
-    return assignments;
+
+    return units.map(unit => {
+      const primaryAssignment = unit.residentAssignments.find(a => a.isPrimary) || unit.residentAssignments[0];
+      const primaryUser = primaryAssignment?.user;
+
+      return {
+        unitId: unit.id,
+        tower: unit.tower?.name || '-',
+        unitNumber: unit.unitNumber,
+        occupancyStatus: unit.occupancy,
+        primaryResidentId: primaryUser?.id || null,
+        primaryResident: primaryUser?.displayName || '-',
+        username: primaryUser?.username || '-',
+        phone: primaryUser?.phone || '-',
+        residentType: primaryAssignment?.occupancyType || '-',
+        numberOfOccupants: unit.residentAssignments.length,
+        verificationStatus: primaryUser?.residentProfile?.verificationStage || 'N/A',
+        accessStatus: primaryUser?.status || 'N/A',
+        moveInDate: primaryAssignment?.moveInDate || null,
+        occupants: unit.residentAssignments.map(a => ({
+          id: a.user.id,
+          name: a.user.displayName,
+          type: a.occupancyType,
+          isPrimary: a.isPrimary,
+          phone: a.user.phone,
+          status: a.user.status,
+          verification: a.user.residentProfile?.verificationStage
+        }))
+      };
+    });
+  }
+
+  async setPrimaryResident(unitId: string, userId: string, actorId: string): Promise<{ success: boolean }> {
+    const communityId = this.tenantContext.communityId;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Unset all primary assignments for this unit
+      await tx.residentUnitAssignment.updateMany({
+        where: { unitId, communityId, deletedAt: null },
+        data: { isPrimary: false }
+      });
+
+      // Set the new primary assignment
+      await tx.residentUnitAssignment.updateMany({
+        where: { unitId, userId, communityId, deletedAt: null },
+        data: { isPrimary: true }
+      });
+    });
+
+    void this.auditService.write({
+      actorId,
+      action: AuditAction.UPDATE,
+      tableName: 'resident_unit_assignments',
+      recordId: unitId,
+      newValues: { event: 'Changed Primary Resident', primaryResidentId: userId },
+    });
+
+    return { success: true };
   }
 
   async getVehicles(): Promise<any[]> {
@@ -698,35 +854,46 @@ export class ResidentService {
     return vehicles;
   }
 
-  async suspendAccess(id: string, actorId: string, reason?: string): Promise<ResidentResponseDto> {
+  async updateAccess(id: string, dto: UpdateResidentAccessDto, actorId: string): Promise<ResidentResponseDto> {
     const user = await this.residentRepository.findResidentById(id);
     if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
 
-    await this.residentRepository.update(id, { status: UserStatus.SUSPENDED });
+    let newStatus = user.status;
+    let lockedUntil = user.lockedUntil;
+    
+    switch (dto.action) {
+      case AccessAction.SUSPEND:
+        newStatus = UserStatus.SUSPENDED;
+        break;
+      case AccessAction.RESTORE:
+        newStatus = UserStatus.ACTIVE;
+        break;
+      case AccessAction.FORCE_LOGOUT:
+        // Invalidate token
+        break;
+      case AccessAction.LOCK:
+        lockedUntil = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000); // 100 years
+        break;
+      case AccessAction.UNLOCK:
+        lockedUntil = null;
+        break;
+    }
 
-    void this.auditService.write({
-      actorId,
-      action: AuditAction.UPDATE,
-      tableName: 'users',
-      recordId: id,
-      newValues: { status: UserStatus.SUSPENDED, reason },
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        lockedUntil,
+        ...(dto.action === AccessAction.FORCE_LOGOUT ? { refreshTokenHash: null } : {})
+      }
     });
 
-    return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
-  }
-
-  async restoreAccess(id: string, actorId: string, reason?: string): Promise<ResidentResponseDto> {
-    const user = await this.residentRepository.findResidentById(id);
-    if (!user) throw new NotFoundException(`Resident '${id}' not found.`);
-
-    await this.residentRepository.update(id, { status: UserStatus.ACTIVE });
-
     void this.auditService.write({
       actorId,
       action: AuditAction.UPDATE,
       tableName: 'users',
       recordId: id,
-      newValues: { status: UserStatus.ACTIVE, reason },
+      newValues: { event: 'Access Control Update', action: dto.action, reason: dto.reason },
     });
 
     return this.mapResidentToDto(await this.residentRepository.findResidentById(id) as ResidentWithRelations);
