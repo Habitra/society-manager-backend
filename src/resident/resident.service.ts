@@ -958,15 +958,81 @@ export class ResidentService {
   async getAnalytics(): Promise<any> {
     const communityId = this.tenantContext.communityId;
     
-    // Group by Occupancy Type
+    // 1. Resident Type / Occupancy Type
     const occupancyData = await this.prisma.residentUnitAssignment.groupBy({
       by: ['occupancyType'],
       where: { communityId, deletedAt: null },
       _count: { id: true }
     });
+    const residentType = occupancyData.map(d => ({ name: d.occupancyType.replace(/_/g, ' '), count: d._count.id }));
+
+    // 2. Verification Status
+    const verificationData = await this.prisma.residentProfile.groupBy({
+      by: ['verificationStage'],
+      where: { communityId },
+      _count: { id: true }
+    });
+    const verificationStatus = verificationData.map(d => ({ name: d.verificationStage.replace(/_/g, ' '), count: d._count.id }));
+
+    // 3. Tower Occupancy
+    const towers = await this.prisma.tower.findMany({
+      where: { communityId, deletedAt: null },
+      include: {
+        units: {
+          where: { deletedAt: null }
+        }
+      }
+    });
+    const towerOccupancy = towers.map(t => {
+      const occupied = t.units.filter(u => u.occupancy === 'OWNER' || u.occupancy === 'TENANT').length;
+      const vacant = t.units.filter(u => u.occupancy === 'VACANT').length;
+      return { name: t.name, occupied, vacant };
+    });
+
+    // 4. Monthly Resident Growth
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const recentUsers = await this.prisma.user.findMany({
+      where: {
+        communityId,
+        role: { in: ['RESIDENT', 'FAMILY_MEMBER'] as any }, // Using any to avoid import issues if UserRole isn't imported, but it should be
+        deletedAt: null,
+        createdAt: { gte: sixMonthsAgo }
+      },
+      select: { createdAt: true }
+    });
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyGrowthMap = new Map<string, number>();
+
+    // Initialize last 6 months to 0
+    for (let i = 0; i < 6; i++) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const key = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+      monthlyGrowthMap.set(key, 0);
+    }
+
+    recentUsers.forEach(u => {
+      const key = `${monthNames[u.createdAt.getMonth()]} ${u.createdAt.getFullYear()}`;
+      if (monthlyGrowthMap.has(key)) {
+        monthlyGrowthMap.set(key, monthlyGrowthMap.get(key)! + 1);
+      }
+    });
+
+    const monthlyGrowth = Array.from(monthlyGrowthMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .reverse();
 
     return {
-      occupancyTrend: occupancyData.map(d => ({ name: d.occupancyType, count: d._count.id }))
+      residentType,
+      verificationStatus,
+      towerOccupancy,
+      monthlyGrowth,
+      occupancyTrend: residentType 
     };
   }
 }

@@ -124,6 +124,14 @@ export class MaintenanceService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          raisedBy: true,
+          category: true,
+          assignedTo: true,
+          unit: {
+            include: { tower: true }
+          }
+        }
       }),
       this.maintenanceRepository.count({ where }),
     ]);
@@ -179,7 +187,7 @@ export class MaintenanceService {
     }
 
     const assignedAt = new Date();
-    let updateData: any = { assignedAt, metadata: { ...(ticket.metadata || {}) } };
+    let updateData: any = { metadata: { ...(ticket.metadata || {}), assignedAt: assignedAt.toISOString() } };
 
     if (dto.staffId) {
       const staffProfile = await this.prisma.staffProfile.findFirst({
