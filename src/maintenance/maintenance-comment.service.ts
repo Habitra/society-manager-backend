@@ -59,6 +59,15 @@ export class MaintenanceCommentService {
     return this.commentRepository.findMany({
       where,
       orderBy: { createdAt: 'asc' },
+      include: {
+        author: {
+          select: {
+            id: true,
+            displayName: true,
+            role: true,
+          }
+        }
+      }
     });
   }
 

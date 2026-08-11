@@ -110,4 +110,26 @@ export class MaintenanceController {
     await this.maintenanceService.getTicketById(id); // Ensure exists
     return this.maintenanceService.getTicketTimeline(id);
   }
+
+  @Patch('tickets/:id/reopen')
+  @Roles(UserRole.RESIDENT, UserRole.FAMILY_MEMBER)
+  @AuditLog({ table: 'maintenance_tickets', action: AuditAction.UPDATE, captureBody: true })
+  @ApiOperation({ summary: 'Reopen a closed or resolved ticket (Resident only)' })
+  @ApiResponse({ status: 200, description: 'Ticket reopened' })
+  async reopenTicket(@Param('id') id: string, @Req() req: any) {
+    return this.maintenanceService.reopenTicket(id, req.user.id);
+  }
+
+  @Patch('tickets/:id/rate')
+  @Roles(UserRole.RESIDENT, UserRole.FAMILY_MEMBER)
+  @AuditLog({ table: 'maintenance_tickets', action: AuditAction.UPDATE, captureBody: true })
+  @ApiOperation({ summary: 'Rate a closed or resolved ticket (Resident only)' })
+  @ApiResponse({ status: 200, description: 'Ticket rated' })
+  async rateTicket(
+    @Param('id') id: string,
+    @Body() dto: { rating: number; note?: string },
+    @Req() req: any,
+  ) {
+    return this.maintenanceService.rateTicket(id, dto.rating, dto.note, req.user.id);
+  }
 }

@@ -95,7 +95,7 @@ export class MaintenanceService {
 
   async listTickets(dto: ListTicketsDto, specificUserId?: string) {
     const page = dto.page ? Number(dto.page) : 1;
-    const limit = dto.limit ? Number(dto.limit) : 10;
+    const limit = dto.limit ? Number(dto.limit) : 20;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -157,7 +157,7 @@ export class MaintenanceService {
       ON_HOLD: ['IN_PROGRESS'],
       RESOLVED: ['REOPENED', 'CLOSED'],
       REOPENED: ['IN_PROGRESS'],
-      CLOSED: [],
+      CLOSED: ['REOPENED'],
     };
 
     const currentStatus = ticket.status as TicketStatus;
@@ -242,17 +242,19 @@ export class MaintenanceService {
     const [comments, attachments, auditLogs] = await Promise.all([
       this.prisma.maintenanceComment.findMany({
         where: { ticketId: id, deletedAt: null },
+        include: { author: { select: { displayName: true, role: true } } },
       }),
       this.prisma.maintenanceAttachment.findMany({
         where: { ticketId: id },
       }),
       this.prisma.auditLog.findMany({
         where: { tableName: 'maintenance_tickets', recordId: id },
+        include: { actor: { select: { displayName: true, role: true } } },
       }),
     ]);
 
     for (const comment of comments) {
-      timeline.push({ type: 'COMMENT_ADDED', timestamp: comment.createdAt, data: { commentId: comment.id, body: comment.body, isInternal: comment.isInternal } });
+      timeline.push({ type: 'COMMENT_ADDED', timestamp: comment.createdAt, data: { commentId: comment.id, body: comment.body, isInternal: comment.isInternal }, actor: comment.author });
     }
 
     for (const attachment of attachments) {
@@ -261,19 +263,24 @@ export class MaintenanceService {
 
     for (const log of auditLogs) {
       const metadata = log.metadata as Record<string, any> || {};
+      const newValues = log.newValues as any || {};
+      const oldValues = log.oldValues as any || {};
+
       if (metadata.event === 'ASSIGNMENT') {
-        timeline.push({ type: 'ASSIGNED', timestamp: log.createdAt, data: { assignedToId: (log.newValues as any)?.assignedToId } });
+        timeline.push({ type: 'ASSIGNED', timestamp: log.createdAt, data: { assignedToId: newValues?.assignedToId }, actor: log.actor });
       } else if (metadata.event === 'REASSIGNMENT') {
-        timeline.push({ type: 'REASSIGNED', timestamp: log.createdAt, data: { assignedToId: (log.newValues as any)?.assignedToId } });
-      } else if (log.newValues && (log.newValues as any).status && log.oldValues && (log.oldValues as any).status !== (log.newValues as any).status) {
-        const newStatus = (log.newValues as any).status;
+        timeline.push({ type: 'REASSIGNED', timestamp: log.createdAt, data: { assignedToId: newValues?.assignedToId }, actor: log.actor });
+      } else if (newValues.status && oldValues.status && oldValues.status !== newValues.status) {
+        const newStatus = newValues.status;
         if (newStatus === 'RESOLVED') {
-          timeline.push({ type: 'RESOLVED', timestamp: log.createdAt, data: null });
+          timeline.push({ type: 'RESOLVED', timestamp: log.createdAt, data: { from: oldValues.status, to: newStatus }, actor: log.actor });
         } else if (newStatus === 'CLOSED') {
-          timeline.push({ type: 'CLOSED', timestamp: log.createdAt, data: null });
+          timeline.push({ type: 'CLOSED', timestamp: log.createdAt, data: { from: oldValues.status, to: newStatus }, actor: log.actor });
         } else {
-          timeline.push({ type: 'STATUS_CHANGED', timestamp: log.createdAt, data: { from: (log.oldValues as any).status, to: newStatus } });
+          timeline.push({ type: 'STATUS_CHANGED', timestamp: log.createdAt, data: { from: oldValues.status, to: newStatus }, actor: log.actor });
         }
+      } else if (newValues.rating && !oldValues.rating) {
+        timeline.push({ type: 'RATED', timestamp: log.createdAt, data: { rating: newValues.rating, note: newValues.ratingNote }, actor: log.actor });
       }
     }
 
@@ -391,6 +398,63 @@ export class MaintenanceService {
       _count: { id: true },
     });
   }
+
+  // ==============================================================================
+  // TICKET ACTIONS & TIMELINE
+  // ==============================================================================
+
+  async reopenTicket(id: string, specificUserId?: string) {
+    const ticket = await this.maintenanceRepository.findById(id) as any;
+    
+    if (specificUserId && ticket.raisedById !== specificUserId) {
+      throw new ForbiddenException('You can only reopen your own tickets.');
+    }
+
+    if (ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED') {
+      throw new BadRequestException('Only CLOSED or RESOLVED tickets can be reopened.');
+    }
+
+    const updated = await this.prisma.maintenanceTicket.update({
+      where: { id },
+      data: {
+        status: 'REOPENED',
+      },
+      include: {
+        category: true,
+        raisedBy: true,
+      },
+    });
+    
+    return { ...updated, snapshot: updated.metadata };
+  }
+
+  async rateTicket(id: string, rating: number, note: string | undefined, specificUserId?: string) {
+    const ticket = await this.maintenanceRepository.findById(id) as any;
+    
+    if (specificUserId && ticket.raisedById !== specificUserId) {
+      throw new ForbiddenException('You can only rate your own tickets.');
+    }
+
+    if (ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED') {
+      throw new BadRequestException('Only CLOSED or RESOLVED tickets can be rated.');
+    }
+
+    if (rating < 1 || rating > 5) {
+      throw new BadRequestException('Rating must be between 1 and 5 stars.');
+    }
+
+    const updated = await this.prisma.maintenanceTicket.update({
+      where: { id },
+      data: {
+        rating,
+        ratingNote: note,
+      },
+    });
+    
+    return { ...updated, snapshot: updated.metadata };
+  }
+
+
 
   // ==============================================================================
   // STAFF INTEGRATION
