@@ -20,7 +20,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:validate": "prisma validate"
+    "db:validate": "prisma validate",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@nestjs/cache-manager": "^3.1.2",

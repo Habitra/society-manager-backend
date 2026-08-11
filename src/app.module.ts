@@ -78,7 +78,7 @@ import { join } from 'path';
     }),
 
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'),
+      rootPath: process.env.VERCEL ? '/tmp/uploads' : join(__dirname, '..', 'uploads'),
       serveRoot: '/uploads',
     }),
 

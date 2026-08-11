@@ -1,4 +1,5 @@
-import { Controller, Get, Patch, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, Query, Param, UseGuards, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { FinancialControlCenterService } from './financial-control-center.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -28,14 +29,18 @@ export class FinancialControlCenterController {
 
   @AuthenticatedOnly()
   @Get('units')
-  getUnits(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('search') search?: string,
-    @Query('tower') tower?: string,
-    @Query('status') status?: string,
-  ) {
-    return this.fccService.getUnits({ page, limit, search, tower, status });
+  getUnits(@Query() query: any) {
+    return this.fccService.getUnits(query);
+  }
+
+  @AuthenticatedOnly()
+  @Get('export')
+  async exportUnits(@Query() query: any, @Res() res: Response) {
+    const csv = await this.fccService.exportUnits(query);
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=Financial_Report_${dateStr}.csv`);
+    res.send(csv);
   }
 
   @AuthenticatedOnly()
@@ -69,5 +74,17 @@ export class FinancialControlCenterController {
   @Post('bulk-actions')
   bulkActions(@Body() payload: { action: string; unitIds: string[] }) {
     return this.fccService.bulkActions(payload);
+  }
+
+  @AuthenticatedOnly()
+  @Post('demand-notice')
+  generateDemandNotice(@Body() payload: { unitIds: string[] }) {
+    return this.fccService.generateDemandNotice(payload);
+  }
+
+  @AuthenticatedOnly()
+  @Post('follow-up')
+  markFollowUp(@Body() payload: { unitIds: string[]; followUpDate: string; notes: string }) {
+    return this.fccService.markFollowUp(payload);
   }
 }

@@ -77,7 +77,6 @@ export class FinancialControlCenterService {
   }
 
   async getInsights() {
-    // Dynamic insights generation
     const communityId = this.tenantContext.communityId;
     
     const sixtyDaysAgo = new Date();
@@ -96,7 +95,6 @@ export class FinancialControlCenterService {
       insights.push(`${overdueCount} flats are overdue by more than 60 days.`);
     }
 
-    // Top defaulters amount
     const defaulters = await this.getDefaulters();
     const top10Sum = defaulters.slice(0, 10).reduce((sum, d) => sum + d.outstanding, 0);
     if (top10Sum > 0) {
@@ -110,11 +108,8 @@ export class FinancialControlCenterService {
     return insights;
   }
 
-  async getUnits(query: { page?: string; limit?: string; search?: string; tower?: string; status?: string }) {
+  private async buildFinancialQuery(query: any) {
     const communityId = this.tenantContext.communityId;
-    const page = parseInt(query.page || '1', 10);
-    const limit = parseInt(query.limit || '50', 10);
-    const skip = (page - 1) * limit;
 
     const where: any = { communityId };
     
@@ -122,15 +117,12 @@ export class FinancialControlCenterService {
       where.towerId = query.tower;
     }
 
-    // A simpler text search for unit number
     if (query.search) {
       where.unitNumber = { contains: query.search, mode: 'insensitive' };
     }
 
     const units = await this.prisma.unit.findMany({
       where,
-      skip,
-      take: limit,
       include: {
         tower: true,
         residentAssignments: {
@@ -143,8 +135,6 @@ export class FinancialControlCenterService {
       },
       orderBy: { unitNumber: 'asc' },
     });
-
-    const totalCount = await this.prisma.unit.count({ where });
 
     const data = units.map(unit => {
       const residentAssign = unit.residentAssignments[0];
@@ -159,8 +149,8 @@ export class FinancialControlCenterService {
       let outstanding = 0;
       let lastPaymentDate = null;
       let hasOverdue = false;
+      let nextDueDate = null;
 
-      // Calculate totals
       for (const inv of unit.invoices) {
         totalDue += Number(inv.totalAmount);
         outstanding += (Number(inv.totalAmount) - Number(inv.paidAmount));
@@ -169,8 +159,10 @@ export class FinancialControlCenterService {
           hasOverdue = true;
         }
 
-        // Only aggregate from unpaid or partially paid invoices for the "breakdown"
         if (inv.status !== InvoiceStatus.PAID && inv.status !== InvoiceStatus.CANCELLED) {
+          if (!nextDueDate || inv.dueDate < nextDueDate) {
+            nextDueDate = inv.dueDate;
+          }
           for (const item of inv.lineItems) {
             const desc = item.description.toLowerCase();
             const val = Number(item.total);
@@ -202,29 +194,49 @@ export class FinancialControlCenterService {
         tower: unit.tower?.name || null,
         residentName: resident?.displayName || null,
         residentPhone: resident?.phone || null,
-        breakdown: {
-          maintenance,
-          parking,
-          amenities,
-          assessment,
-          penalty,
-        },
+        breakdown: { maintenance, parking, amenities, assessment, penalty },
         totalDue,
         outstandingBalance: outstanding,
         lastPaymentDate,
         invoiceCount: unit.invoices.length,
         status,
+        nextDueDate
       };
     });
 
-    // Post-filter by status if needed
     let filteredData = data;
     if (query.status) {
-      filteredData = data.filter(d => d.status.toLowerCase() === query.status!.toLowerCase());
+      filteredData = filteredData.filter(d => d.status.toLowerCase() === query.status.toLowerCase());
+    }
+    if (query.hasPenalty === 'true') {
+      filteredData = filteredData.filter(d => d.breakdown.penalty > 0);
+    }
+    if (query.minOutstanding) {
+      filteredData = filteredData.filter(d => d.outstandingBalance >= Number(query.minOutstanding));
+    }
+    if (query.maxOutstanding) {
+      filteredData = filteredData.filter(d => d.outstandingBalance <= Number(query.maxOutstanding));
+    }
+    if (query.dueDate) {
+      const filterDate = new Date(query.dueDate).toISOString().split('T')[0];
+      filteredData = filteredData.filter(d => d.nextDueDate && new Date(d.nextDueDate).toISOString().split('T')[0] === filterDate);
     }
 
+    return filteredData;
+  }
+
+  async getUnits(query: any) {
+    const page = parseInt(query.page || '1', 10);
+    const limit = parseInt(query.limit || '50', 10);
+    
+    const allData = await this.buildFinancialQuery(query);
+    const totalCount = allData.length;
+    
+    const skip = (page - 1) * limit;
+    const paginatedData = allData.slice(skip, skip + limit);
+
     return {
-      data: filteredData,
+      data: paginatedData,
       meta: {
         total: totalCount,
         page,
@@ -232,6 +244,36 @@ export class FinancialControlCenterService {
         totalPages: Math.ceil(totalCount / limit),
       }
     };
+  }
+
+  async exportUnits(query: any): Promise<string> {
+    const allData = await this.buildFinancialQuery(query);
+    
+    const headers = [
+      'Unit', 'Tower', 'Resident', 'Phone', 'Maintenance', 'Parking', 
+      'Penalty', 'Outstanding', 'Status', 'Last Payment', 'Due Date'
+    ];
+    
+    const rows = allData.map(d => [
+      d.unitNumber,
+      d.tower || '',
+      d.residentName || '',
+      d.residentPhone || '',
+      d.breakdown.maintenance,
+      d.breakdown.parking,
+      d.breakdown.penalty,
+      d.outstandingBalance,
+      d.status,
+      d.lastPaymentDate ? new Date(d.lastPaymentDate).toLocaleDateString() : '',
+      d.nextDueDate ? new Date(d.nextDueDate).toLocaleDateString() : ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(','))
+    ].join('\n');
+
+    return csvContent;
   }
 
   async getDefaulters() {
@@ -278,8 +320,6 @@ export class FinancialControlCenterService {
   async getAnalytics() {
     const vendorSpendData = await this.vendorAnalytics.getVendorSpendAnalytics();
 
-    // Return mock structured data for Recharts, derived from actual data conceptually
-    // For a real production app, this would use raw SQL group bys.
     return {
       collectionTrend: [
         { name: 'Jan', amount: 120000 },
@@ -309,7 +349,6 @@ export class FinancialControlCenterService {
   async inlineAdjustment(unitId: string, payload: { type: string; amount: number; reason: string; invoiceId?: string }) {
     const { type, amount, reason, invoiceId } = payload;
     
-    // Create an audit log
     await this.auditService.write({
       action: AuditAction.UPDATE,
       tableName: 'invoices',
@@ -319,8 +358,6 @@ export class FinancialControlCenterService {
       metadata: { note: 'Inline Adjustment' },
     });
 
-    // Natively, we should add an InvoiceLineItem and recalculate.
-    // For simplicity, if invoiceId is provided:
     if (invoiceId) {
       await this.prisma.invoiceLineItem.create({
         data: {
@@ -332,7 +369,6 @@ export class FinancialControlCenterService {
           quantity: 1,
         }
       });
-      // Recalculate invoice total
       const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
       if (inv) {
         await this.prisma.invoice.update({
@@ -364,11 +400,58 @@ export class FinancialControlCenterService {
             channel: NotificationChannel.WHATSAPP,
             title: `Bulk Action: ${action}`,
             body: `You are receiving this notification for action: ${action}`,
-          }
+          },
         });
       }
     }
 
-    return { success: true, count: unitIds.length, message: `Successfully executed ${action}` };
+    return { success: true, processed: unitIds.length };
+  }
+
+  async generateDemandNotice(payload: { unitIds: string[] }) {
+    const { unitIds } = payload;
+
+    for (const id of unitIds) {
+      const assignment = await this.prisma.residentUnitAssignment.findFirst({
+        where: { unitId: id, isPrimary: true },
+      });
+
+      if (assignment) {
+        await this.prisma.notificationLog.create({
+          data: {
+            communityId: this.tenantContext.communityId,
+            userId: assignment.userId,
+            channel: NotificationChannel.EMAIL,
+            title: `Demand Notice Generated`,
+            body: `A legal demand notice has been generated for your unit.`,
+          },
+        });
+      }
+    }
+
+    return { success: true, count: unitIds.length };
+  }
+
+  async markFollowUp(payload: { unitIds: string[]; followUpDate: string; notes: string }) {
+    const { unitIds, followUpDate, notes } = payload;
+
+    for (const id of unitIds) {
+      await this.prisma.auditLog.create({
+        data: {
+          communityId: this.tenantContext.communityId,
+          actorId: this.tenantContext.userId,
+          action: AuditAction.UPDATE,
+          tableName: 'Unit',
+          recordId: id,
+          metadata: {
+            type: 'FOLLOW_UP',
+            notes,
+            followUpDate,
+          },
+        },
+      });
+    }
+
+    return { success: true, count: unitIds.length };
   }
 }

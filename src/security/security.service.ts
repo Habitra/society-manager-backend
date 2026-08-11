@@ -76,7 +76,13 @@ export class SecurityService {
 
     const requests = await this.prisma.visitorRequest.findMany({
       where: whereClause,
-      include: { unit: true, gateEntries: true },
+      include: {
+        unit: true,
+        gateEntries: true,
+        requestedBy: {
+          select: { id: true, displayName: true, username: true }
+        }
+      },
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,

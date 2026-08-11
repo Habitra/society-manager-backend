@@ -32,7 +32,7 @@ export class StorageController {
   })
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
-      destination: './uploads',
+      destination: process.env.VERCEL ? '/tmp/uploads' : './uploads',
       filename: (req, file, cb) => {
         // Use a UUID as the filename — crypto.randomUUID() is CSPRNG-backed
         const ext = extname(file.originalname);
