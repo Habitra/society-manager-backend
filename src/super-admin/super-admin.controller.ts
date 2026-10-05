@@ -101,4 +101,17 @@ export class SuperAdminController {
   async resetCommunityAdminPassword(@Param('id') id: string, @Request() req: any) {
     return this.superAdminService.resetCommunityAdminPassword(id, req.user.id);
   }
+
+  @AuthenticatedOnly()
+  @Get('audit-logs')
+  @ApiOperation({ summary: 'Get system-wide audit logs' })
+  async getAuditLogs(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 25,
+    @Query('search') search?: string,
+    @Query('action') action?: string,
+  ) {
+    const skip = ((page || 1) - 1) * (limit || 25);
+    return this.superAdminService.getAuditLogs(skip, limit || 25, search, action);
+  }
 }

@@ -38,3 +38,12 @@ coverage/
 
 # Misc
 .cache/
+
+# QA artifacts and test scripts
+*_artifacts/
+*_screenshots/
+audit_report_data.json
+run_*.js
+capture_*.js
+test_*.js
+check_users.js

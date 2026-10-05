@@ -262,4 +262,58 @@ export class SuperAdminService {
       temporaryPassword: tempPassword,
     };
   }
+
+  async getAuditLogs(skip: number, take: number, search?: string, action?: string) {
+    const where: any = {};
+    if (action) {
+      where.action = action;
+    }
+    if (search) {
+      where.OR = [
+        { tableName: { contains: search, mode: 'insensitive' } },
+        { actor: { username: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+    const [items, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          actor: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return {
+      items: items.map((log) => ({
+        id: log.id,
+        userId: log.actorId,
+        userType: log.actor?.role || 'SYSTEM',
+        username: log.actor?.username || log.actor?.displayName,
+        action: log.action,
+        entityName: log.tableName,
+        entityId: log.recordId,
+        details: log.newValues || log.oldValues || log.metadata || {},
+        ipAddress: log.ipAddress,
+        createdAt: log.createdAt,
+      })),
+      meta: {
+        total,
+        page: Math.floor(skip / take) + 1,
+        limit: take,
+        totalPages: Math.ceil(total / take),
+      },
+    };
+  }
 }
+
